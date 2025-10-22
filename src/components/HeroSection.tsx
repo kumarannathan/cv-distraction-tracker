@@ -235,11 +235,26 @@ const HeroSection: React.FC = memo(() => {
               </span>
             ))}
           </div>
+          
+          {/* Attribution - only show after full quote is rendered */}
+          <div 
+            className="text-center mt-8"
+            style={{ 
+              opacity: scrollProgress >= 0.95 ? 1 : 0,
+              transition: 'opacity 0.5s ease-in-out'
+            }}
+          >
+            <p className="text-sm text-gray-600 italic">
+              Adapted from Karis Nemik, Andor
+            </p>
+          </div>
 
         </div>
       </div>
     </section>
   );
-};
+});
+
+HeroSection.displayName = 'HeroSection';
 
 export default HeroSection;

@@ -1,4 +1,4 @@
-import React, { Suspense, lazy } from 'react';
+import { Suspense, lazy } from 'react';
 import Header from './components/Header';
 import ProgressBar from './components/ProgressBar';
 import FloatingIndicator from './components/FloatingIndicator';
