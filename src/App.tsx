@@ -1,17 +1,24 @@
-// import React from 'react';
-// import { motion } from 'framer-motion';
+import React, { Suspense, lazy } from 'react';
 import Header from './components/Header';
 import ProgressBar from './components/ProgressBar';
 import FloatingIndicator from './components/FloatingIndicator';
 import HeroSection from './components/HeroSection';
-// import CuomoAd from './components/CuomoAd';
-import WhoIsHasan from './components/WhoIsHasan';
-import AmericaDeserved from './components/AmericaDeserved';
-import CuomoContext from './components/CuomoContext';
-import MamdaniStance from './components/MamdaniStance';
-import WhyNotCuomo from './components/WhyNotCuomo';
-import PhotoCarousels from './components/PhotoCarousel';
-import ResourcesSection from './components/ResourcesSection';
+
+// Lazy load components for better performance
+const WhoIsHasan = lazy(() => import('./components/WhoIsHasan'));
+const AmericaDeserved = lazy(() => import('./components/AmericaDeserved'));
+const CuomoContext = lazy(() => import('./components/CuomoContext'));
+const MamdaniStance = lazy(() => import('./components/MamdaniStance'));
+const WhyNotCuomo = lazy(() => import('./components/WhyNotCuomo'));
+const PhotoCarousels = lazy(() => import('./components/PhotoCarousel'));
+const ResourcesSection = lazy(() => import('./components/ResourcesSection'));
+
+// Loading component for Suspense fallback
+const LoadingSpinner = () => (
+  <div className="flex items-center justify-center py-16">
+    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-black"></div>
+  </div>
+);
 
 function App() {
   return (
@@ -50,7 +57,9 @@ function App() {
         
         {/* Photo Carousels - Right below Hero Section */}
         <div className="max-w-7xl mx-auto px-6 py-8">
-          <PhotoCarousels />
+          <Suspense fallback={<LoadingSpinner />}>
+            <PhotoCarousels />
+          </Suspense>
         </div>
         
         {/* Content Sections */}
@@ -58,21 +67,31 @@ function App() {
           <div className="grid lg:grid-cols-3 gap-12">
             <div className="lg:col-span-2 space-y-16">
               <div id="who-is-hasan">
-                <WhoIsHasan />
+                <Suspense fallback={<LoadingSpinner />}>
+                  <WhoIsHasan />
+                </Suspense>
               </div>
               <div id="america-deserved">
-                <AmericaDeserved />
+                <Suspense fallback={<LoadingSpinner />}>
+                  <AmericaDeserved />
+                </Suspense>
               </div>
               <div id="cuomo-context">
-                <CuomoContext />
+                <Suspense fallback={<LoadingSpinner />}>
+                  <CuomoContext />
+                </Suspense>
               </div>
             </div>
             <div className="lg:col-span-1 space-y-16">
               <div id="mamdani-stance">
-                <MamdaniStance />
+                <Suspense fallback={<LoadingSpinner />}>
+                  <MamdaniStance />
+                </Suspense>
               </div>
               <div id="why-not-cuomo">
-                <WhyNotCuomo />
+                <Suspense fallback={<LoadingSpinner />}>
+                  <WhyNotCuomo />
+                </Suspense>
               </div>
             </div>
           </div>
@@ -81,7 +100,9 @@ function App() {
         {/* Resources Section */}
         <div id="resources" className="bg-white border-2 border-black py-16 mx-[2%] mb-[2%] rounded-[5px] scale-90">
           <div className="max-w-7xl mx-auto px-6">
-            <ResourcesSection />
+            <Suspense fallback={<LoadingSpinner />}>
+              <ResourcesSection />
+            </Suspense>
           </div>
         </div>
       </main>

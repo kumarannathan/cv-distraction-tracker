@@ -1,14 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, memo, useCallback, useMemo } from 'react';
 import { useRef } from 'react';
 
-const HeroSection: React.FC = () => {
+const HeroSection: React.FC = memo(() => {
   const sectionRef = useRef<HTMLElement>(null);
   const [scrollProgress, setScrollProgress] = useState(0);
   const [currentFascistIndex, setCurrentFascistIndex] = useState(0);
   const [currentEstablishmentIndex, setCurrentEstablishmentIndex] = useState(0);
   
-  const fascistTerms = ['fascist', 'GOP', 'right wing', 'far right', 'extremists', 'ruling class'];
-  const establishmentTerms = ['establishment', 'GOP', 'right wing', 'far right', 'extremists', 'ruling class'];
+  const fascistTerms = useMemo(() => ['fascist', 'GOP', 'right wing', 'far right', 'extremists', 'ruling class'], []);
+  const establishmentTerms = useMemo(() => ['establishment', 'GOP', 'right wing', 'far right', 'extremists', 'ruling class'], []);
   
   useEffect(() => {
     const fascistInterval = setInterval(() => {
@@ -25,31 +25,43 @@ const HeroSection: React.FC = () => {
     };
   }, [fascistTerms.length, establishmentTerms.length]);
 
-  // Scroll hijacking logic
-  useEffect(() => {
-    const handleScroll = () => {
-      if (!sectionRef.current) return;
-      
-      const section = sectionRef.current;
-      const rect = section.getBoundingClientRect();
-      const sectionHeight = section.offsetHeight;
-      const windowHeight = window.innerHeight;
-      
-      // Calculate progress through this section
-      const scrollableHeight = sectionHeight - windowHeight;
-      const scrolled = Math.max(0, -rect.top);
-      
-      const newProgress = Math.min(scrolled / scrollableHeight, 1);
-      setScrollProgress(newProgress);
-    };
+  // Scroll hijacking logic with throttling
+  const handleScroll = useCallback(() => {
+    if (!sectionRef.current) return;
     
-    window.addEventListener('scroll', handleScroll);
-    handleScroll(); // Initial check
+    const section = sectionRef.current;
+    const rect = section.getBoundingClientRect();
+    const sectionHeight = section.offsetHeight;
+    const windowHeight = window.innerHeight;
     
-    return () => window.removeEventListener('scroll', handleScroll);
+    // Calculate progress through this section
+    const scrollableHeight = sectionHeight - windowHeight;
+    const scrolled = Math.max(0, -rect.top);
+    
+    const newProgress = Math.min(scrolled / scrollableHeight, 1);
+    setScrollProgress(newProgress);
   }, []);
 
-  const paragraphs = [
+  useEffect(() => {
+    let ticking = false;
+    
+    const throttledHandleScroll = () => {
+      if (!ticking) {
+        requestAnimationFrame(() => {
+          handleScroll();
+          ticking = false;
+        });
+        ticking = true;
+      }
+    };
+    
+    window.addEventListener('scroll', throttledHandleScroll, { passive: true });
+    handleScroll(); // Initial check
+    
+    return () => window.removeEventListener('scroll', throttledHandleScroll);
+  }, [handleScroll]);
+
+  const paragraphs = useMemo(() => [
     {
       text: "Remember that the frontier of the Rebellion is everywhere. And even the smallest act of insurrection pushes our lines forward.",
       redactions: [
@@ -77,7 +89,7 @@ const HeroSection: React.FC = () => {
         { original: "siege", replacement: "suppression" }
       ]
     }
-  ];
+  ], [fascistTerms, currentFascistIndex, establishmentTerms, currentEstablishmentIndex]);
 
   const RotatingText: React.FC<{ terms: string[], currentIndex: number, suffix?: string }> = ({ terms, currentIndex, suffix = '' }) => {
     return (

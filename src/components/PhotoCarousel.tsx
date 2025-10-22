@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, memo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface Photo {
@@ -13,16 +13,17 @@ interface PhotoCarouselProps {
   photos: Photo[];
 }
 
-const PhotoCarousel: React.FC<PhotoCarouselProps> = ({ title, photos }) => {
+const PhotoCarousel: React.FC<PhotoCarouselProps> = memo(({ title, photos }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [loadedImages, setLoadedImages] = useState<Set<number>>(new Set());
 
-  // const nextPhoto = () => {
-  //   setCurrentIndex((prev) => (prev + 1) % photos.length);
-  // };
+  const handleImageLoad = useCallback((index: number) => {
+    setLoadedImages(prev => new Set(prev).add(index));
+  }, []);
 
-  // const prevPhoto = () => {
-  //   setCurrentIndex((prev) => (prev - 1 + photos.length) % photos.length);
-  // };
+  const handleIndicatorClick = useCallback((index: number) => {
+    setCurrentIndex(index);
+  }, []);
 
   return (
     <div className="bg-white border-2 border-black rounded-xl p-4 shadow-lg">
@@ -44,6 +45,12 @@ const PhotoCarousel: React.FC<PhotoCarouselProps> = ({ title, photos }) => {
                 src={photos[currentIndex].src}
                 alt={photos[currentIndex].alt}
                 className="w-full h-64 object-cover object-center"
+                loading="lazy"
+                onLoad={() => handleImageLoad(currentIndex)}
+                style={{
+                  opacity: loadedImages.has(currentIndex) ? 1 : 0,
+                  transition: 'opacity 0.3s ease-in-out'
+                }}
               />
             </motion.div>
           </AnimatePresence>
@@ -56,7 +63,7 @@ const PhotoCarousel: React.FC<PhotoCarouselProps> = ({ title, photos }) => {
         {photos.map((_, index) => (
           <button
             key={index}
-            onClick={() => setCurrentIndex(index)}
+            onClick={() => handleIndicatorClick(index)}
             className={`w-2 h-2 rounded-full transition-colors ${
               index === currentIndex ? 'bg-black' : 'bg-gray-300'
             }`}
@@ -65,9 +72,11 @@ const PhotoCarousel: React.FC<PhotoCarouselProps> = ({ title, photos }) => {
       </div>
     </div>
   );
-};
+});
 
-const PhotoCarousels: React.FC = () => {
+PhotoCarousel.displayName = 'PhotoCarousel';
+
+const PhotoCarousels: React.FC = memo(() => {
   const cuomoPhotos: Photo[] = [
     {
       id: 1,
@@ -271,6 +280,8 @@ const PhotoCarousels: React.FC = () => {
       </div>
     </div>
   );
-};
+});
+
+PhotoCarousels.displayName = 'PhotoCarousels';
 
 export default PhotoCarousels;

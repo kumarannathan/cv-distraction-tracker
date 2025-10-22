@@ -1,29 +1,29 @@
-import React, { useState } from 'react';
+import React, { useState, memo, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const Header: React.FC = () => {
+const Header: React.FC = memo(() => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
-  const menuItems = [
+  const menuItems = useMemo(() => [
     { id: 'who-is-hasan', title: 'WHO IS HASAN?', subtitle: 'Background & Context' },
     { id: 'america-deserved', title: 'AMERICA DESERVED?', subtitle: 'The Controversial Statement' },
     { id: 'cuomo-context', title: 'CUOMO CONTEXT', subtitle: 'The Interview' },
     { id: 'mamdani-stance', title: 'MAMDANI STANCE', subtitle: 'Academic Perspective' },
     { id: 'why-not-cuomo', title: 'WHY NOT CUOMO', subtitle: 'Political Analysis' },
     { id: 'resources', title: 'RESOURCES', subtitle: 'Further Reading' }
-  ];
+  ], []);
 
-  const toggleMenu = () => {
-    setIsMenuOpen(!isMenuOpen);
-  };
+  const toggleMenu = useCallback(() => {
+    setIsMenuOpen(prev => !prev);
+  }, []);
 
-  const scrollToSection = (sectionId: string) => {
+  const scrollToSection = useCallback((sectionId: string) => {
     const element = document.getElementById(sectionId);
     if (element) {
       element.scrollIntoView({ behavior: 'smooth' });
     }
     setIsMenuOpen(false);
-  };
+  }, []);
 
   return (
     <>
@@ -41,6 +41,7 @@ const Header: React.FC = () => {
                 src="/circle.png" 
                 alt="Circle" 
                 className="h-12 w-auto"
+                loading="eager"
               />
               <div>
                 <h1 className="text-xl font-black text-black tracking-tight">
@@ -130,6 +131,8 @@ const Header: React.FC = () => {
       </AnimatePresence>
     </>
   );
-};
+});
+
+Header.displayName = 'Header';
 
 export default Header;

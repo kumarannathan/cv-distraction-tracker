@@ -1,18 +1,22 @@
-import React, { useState } from 'react';
+import React, { useState, memo, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useInView } from 'framer-motion';
 import { useRef } from 'react';
 
-const ResourcesSection: React.FC = () => {
+const ResourcesSection: React.FC = memo(() => {
   const ref = useRef(null);
   const isInView = useInView(ref, { once: true, margin: "-100px" });
   const [isExpanded, setIsExpanded] = useState(false);
 
-  const resources = [
+  const toggleExpanded = useCallback(() => {
+    setIsExpanded(prev => !prev);
+  }, []);
+
+  const resources = useMemo(() => [
     {
       title: "Support Zohran Kwame Mamdani",
       description: "Learn about Zohran's campaign and how to help",
-      link: "https://zohranmamdani.com",
+      link: "https://www.zohranfornyc.com/",
       type: "Campaign"
     },
     {
@@ -20,26 +24,8 @@ const ResourcesSection: React.FC = () => {
       description: "Get involved with progressive organizing",
       link: "https://www.dsausa.org",
       type: "Organization"
-    },
-    {
-      title: "Read Mahmood Mamdani's Work",
-      description: "Academic analysis of US foreign policy",
-      link: "https://www.goodreads.com/author/show/123456.Mahmood_Mamdani",
-      type: "Education"
-    },
-    {
-      title: "Follow Hasan Piker on Twitch",
-      description: "Watch his political commentary and analysis",
-      link: "https://www.twitch.tv/hasanabi",
-      type: "Media"
-    },
-    {
-      title: "Learn About US Foreign Policy",
-      description: "Educational resources on American interventionism",
-      link: "https://www.cfr.org",
-      type: "Education"
     }
-  ];
+  ], []);
 
   return (
     <motion.section
@@ -52,7 +38,7 @@ const ResourcesSection: React.FC = () => {
     >
       {/* Dropdown Header */}
       <motion.button
-        onClick={() => setIsExpanded(!isExpanded)}
+        onClick={toggleExpanded}
         className="w-full text-left"
         initial={{ opacity: 0, y: 20 }}
         animate={isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
@@ -180,6 +166,8 @@ const ResourcesSection: React.FC = () => {
       </AnimatePresence>
     </motion.section>
   );
-};
+});
+
+ResourcesSection.displayName = 'ResourcesSection';
 
 export default ResourcesSection;
