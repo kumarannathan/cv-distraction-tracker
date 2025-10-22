@@ -1,10 +1,10 @@
-import React from 'react';
-import { motion } from 'framer-motion';
+// import React from 'react';
+// import { motion } from 'framer-motion';
 import Header from './components/Header';
 import ProgressBar from './components/ProgressBar';
 import FloatingIndicator from './components/FloatingIndicator';
 import HeroSection from './components/HeroSection';
-import CuomoAd from './components/CuomoAd';
+// import CuomoAd from './components/CuomoAd';
 import WhoIsHasan from './components/WhoIsHasan';
 import AmericaDeserved from './components/AmericaDeserved';
 import CuomoContext from './components/CuomoContext';

@@ -16,13 +16,13 @@ interface PhotoCarouselProps {
 const PhotoCarousel: React.FC<PhotoCarouselProps> = ({ title, photos }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
 
-  const nextPhoto = () => {
-    setCurrentIndex((prev) => (prev + 1) % photos.length);
-  };
+  // const nextPhoto = () => {
+  //   setCurrentIndex((prev) => (prev + 1) % photos.length);
+  // };
 
-  const prevPhoto = () => {
-    setCurrentIndex((prev) => (prev - 1 + photos.length) % photos.length);
-  };
+  // const prevPhoto = () => {
+  //   setCurrentIndex((prev) => (prev - 1 + photos.length) % photos.length);
+  // };
 
   return (
     <div className="bg-white border-2 border-black rounded-xl p-4 shadow-lg">
