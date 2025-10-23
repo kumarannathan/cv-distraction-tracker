@@ -1,5 +1,5 @@
 {
-  "name": "hasan",
+  "name": "focus-zone",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -10,11 +10,16 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@mediapipe/camera_utils": "^0.3.1675466862",
+    "@mediapipe/face_mesh": "^0.4.1633559619",
+    "@mediapipe/hands": "^0.4.1675469240",
     "autoprefixer": "^10.4.21",
     "framer-motion": "^12.23.24",
+    "lucide-react": "^0.546.0",
     "postcss": "^8.5.6",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
+    "recharts": "^3.3.0",
     "tailwindcss": "^3.4.18"
   },
   "devDependencies": {
