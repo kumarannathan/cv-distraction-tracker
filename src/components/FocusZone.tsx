@@ -4,14 +4,7 @@ import { FaceMesh } from '@mediapipe/face_mesh';
 import { Hands } from '@mediapipe/hands';
 import { Camera } from '@mediapipe/camera_utils';
 import { Eye, Hand, Clock, TrendingUp, Play, Pause, Square, Target } from 'lucide-react';
-import PomodoroTimer from './PomodoroTimer';
-import FocusStreaks from './FocusStreaks';
 import EnhancedAnalytics from './EnhancedAnalytics';
-import TaskManager from './TaskManager';
-import DistractionTracker from './DistractionTracker';
-import AmbientSounds from './AmbientSounds';
-import BreakReminders from './BreakReminders';
-import FocusModes from './FocusModes';
 
 interface FocusData {
   duration: number;
@@ -21,13 +14,6 @@ interface FocusData {
   timestamp: number;
 }
 
-interface SessionStats {
-  totalSessions: number;
-  totalFocusTime: number;
-  averageFocusScore: number;
-  bestStreak: number;
-  currentStreak: number;
-}
 
 const FocusZone: React.FC = memo(() => {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -41,6 +27,10 @@ const FocusZone: React.FC = memo(() => {
   // Focus tracking state
   const [focusScore, setFocusScore] = useState(0);
   const [isFocused, setIsFocused] = useState(false);
+  const [smoothedFocusScore, setSmoothedFocusScore] = useState(0);
+  const [focusMeterLevel, setFocusMeterLevel] = useState(0);
+  const [focusStateBuffer, setFocusStateBuffer] = useState<boolean[]>([]);
+  const [showDistractionWarning, setShowDistractionWarning] = useState(false);
   const [currentGesture, setCurrentGesture] = useState('NONE');
   const [sessionActive, setSessionActive] = useState(false);
   const [sessionPaused, setSessionPaused] = useState(false);
@@ -48,17 +38,62 @@ const FocusZone: React.FC = memo(() => {
   const [focusedTime, setFocusedTime] = useState(0);
   const [distractionCount, setDistractionCount] = useState(0);
   const [lastFocusState, setLastFocusState] = useState(true);
+  const [showFocusPercentage, setShowFocusPercentage] = useState(false);
+  const lastDistractionTime = useRef<number>(0);
+  const [sessionEndTime, setSessionEndTime] = useState<number | null>(null);
+  const sessionEndTimeRef = useRef<number | null>(null);
+  const [showDebugOverlay, setShowDebugOverlay] = useState(false);
+  const [eyePositions, setEyePositions] = useState<{left: {x: number, y: number}, right: {x: number, y: number}, gaze: {x: number, y: number}} | null>(null);
+  const [showHeatmap, setShowHeatmap] = useState(false);
+  const [heatmapData, setHeatmapData] = useState<number[][]>([]);
+  
+  // Initialize heatmap data (20x15 grid for laptop screen)
+  useEffect(() => {
+    const grid = Array(15).fill(null).map(() => Array(20).fill(0));
+    setHeatmapData(grid);
+  }, []);
+  
+  // Function to update heatmap based on gaze position
+  const updateHeatmap = useCallback((gazeX: number, gazeY: number) => {
+    if (!showHeatmap) {
+      console.log('🔥 Heatmap not active, skipping update');
+      return;
+    }
+    
+    console.log('🔥 Updating heatmap data with gaze:', gazeX, gazeY);
+    
+    setHeatmapData(prev => {
+      const newData = prev.map(row => [...row]);
+      
+      // Convert gaze position to grid coordinates
+      const gridX = Math.floor(gazeX * 20);
+      const gridY = Math.floor(gazeY * 15);
+      
+      console.log('🔥 Grid coordinates:', gridX, gridY);
+      
+      // Add heat to the gaze position and surrounding area (ULTRA SENSITIVE)
+      for (let y = Math.max(0, gridY - 4); y <= Math.min(14, gridY + 4); y++) {
+        for (let x = Math.max(0, gridX - 4); x <= Math.min(19, gridX + 4); x++) {
+          const distance = Math.sqrt((x - gridX) ** 2 + (y - gridY) ** 2);
+          const heat = Math.max(0, 1 - distance / 6) * 0.3; // Increased from 0.1 to 0.3
+          newData[y][x] = Math.min(1, newData[y][x] + heat);
+        }
+      }
+      
+      console.log('🔥 Heatmap data updated, max heat:', Math.max(...newData.flat()));
+      return newData;
+    });
+  }, [showHeatmap]);
+  
+  // Function to get focus status text based on score
+  const getFocusStatusText = useCallback((score: number) => {
+    if (score >= 65) return "Focused";
+    if (score >= 50) return "Present";
+    return "Away";
+  }, []);
   
   // Analytics state
   const [sessionHistory, setSessionHistory] = useState<FocusData[]>([]);
-  const [sessionStats, setSessionStats] = useState<SessionStats>({
-    totalSessions: 0,
-    totalFocusTime: 0,
-    averageFocusScore: 0,
-    bestStreak: 0,
-    currentStreak: 0
-  });
-  const [showSessionHistory, setShowSessionHistory] = useState(false);
   
   // UI state
   const [showAnalytics, setShowAnalytics] = useState(false);
@@ -70,26 +105,12 @@ const FocusZone: React.FC = memo(() => {
   
   // New feature states
   const [showPomodoro, setShowPomodoro] = useState(false);
-  const [showStreaks, setShowStreaks] = useState(false);
-  const [showTasks, setShowTasks] = useState(false);
-  const [showDistractions, setShowDistractions] = useState(false);
-  const [showAmbientSounds, setShowAmbientSounds] = useState(false);
-  const [showBreakReminders, setShowBreakReminders] = useState(false);
   const [showFocusModes, setShowFocusModes] = useState(false);
-  const [currentFeaturePage, setCurrentFeaturePage] = useState(0);
-  const [currentAppPage, setCurrentAppPage] = useState(0); // 0 = main, 1 = features
-  const [pomodoroActive, setPomodoroActive] = useState(false);
-  const [pomodoroPhase, setPomodoroPhase] = useState<'work' | 'break'>('work');
-  
-  // Task management
-  const [currentTaskId, setCurrentTaskId] = useState<string | undefined>();
-  const [currentFocusMode, setCurrentFocusMode] = useState<string | undefined>();
-  const [sessionStartTime, setSessionStartTime] = useState(0);
+  const [showFocusTools, setShowFocusTools] = useState(false);
   
   // Gesture settings
   const [gestureSettings, setGestureSettings] = useState({
     pauseToggle: true, // true = toggle on gesture, false = hold gesture
-    enableStartGesture: false, // hide start gesture for now
     gestureSensitivity: 0.7 // how long to hold gesture before triggering
   });
   
@@ -99,23 +120,93 @@ const FocusZone: React.FC = memo(() => {
   const [gestureTriggered, setGestureTriggered] = useState(false);
   const [lastTriggeredGesture, setLastTriggeredGesture] = useState('NONE');
   const [isHoldingPauseGesture, setIsHoldingPauseGesture] = useState(false);
+  const [palmAbsenceTime, setPalmAbsenceTime] = useState(0);
+  
+  // Swipe detection state
+  const [palmMovementHistory, setPalmMovementHistory] = useState<{x: number, y: number, timestamp: number}[]>([]);
+  
+  // Use refs to get current state values in callbacks
+  const sessionActiveRef = useRef(sessionActive);
+  const sessionPausedRef = useRef(sessionPaused);
+  const startSessionRef = useRef<(() => void) | null>(null);
+  
+  // Update refs when state changes
+  useEffect(() => {
+    sessionActiveRef.current = sessionActive;
+  }, [sessionActive]);
+  
+  useEffect(() => {
+    sessionPausedRef.current = sessionPaused;
+  }, [sessionPaused]);
+
+  // Function to detect swipe gesture
+  const detectSwipe = useCallback((landmarks: any) => {
+    if (!landmarks || landmarks.length === 0) return false;
+    
+    // Get the center of the palm (middle finger MCP joint)
+    const palmCenter = landmarks[9]; // Middle finger MCP
+    const currentTime = Date.now();
+    
+    // Add current position to history
+    setPalmMovementHistory(prev => {
+      const newHistory = [...prev, { x: palmCenter.x, y: palmCenter.y, timestamp: currentTime }];
+      // Keep only last 10 positions (about 1/3 second at 30fps)
+      return newHistory.slice(-10);
+    });
+    
+    // Check if we have enough movement history
+    setPalmMovementHistory(current => {
+      if (current.length < 5) return current;
+      
+      const recent = current.slice(-5); // Last 5 positions
+      const start = recent[0];
+      const end = recent[recent.length - 1];
+      
+      // Calculate total distance moved
+      const deltaX = end.x - start.x;
+      const deltaY = end.y - start.y;
+      const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+      
+      // Check if it's a significant horizontal movement (swipe) - more sensitive
+      const isHorizontalSwipe = Math.abs(deltaX) > 0.15 && Math.abs(deltaY) < 0.3;
+      const isSignificantMovement = distance > 0.15;
+      
+      // Debug logging
+      if (current.length >= 5) {
+        console.log('🔄 Swipe check:', {
+          deltaX: deltaX.toFixed(3),
+          deltaY: deltaY.toFixed(3),
+          distance: distance.toFixed(3),
+          isHorizontalSwipe,
+          isSignificantMovement
+        });
+      }
+      
+      if (isHorizontalSwipe && isSignificantMovement) {
+        console.log('👋 SWIPE DETECTED! Resuming session');
+        setSessionPaused(false);
+        setPalmAbsenceTime(0);
+        setIsHoldingPauseGesture(false);
+        // Clear movement history after detecting swipe
+        return [];
+      }
+      
+      return current;
+    });
+    
+    return false;
+  }, []);
 
   // Gesture controls mapping
   const gestureControls = useMemo(() => {
     const controls = [
-      { gesture: 'OPEN_PALM', icon: '✋', action: 'Pause/Resume', color: 'text-yellow-400' },
-      { gesture: 'PEACE', icon: '✌️', action: 'End Session', color: 'text-red-400' },
-      { gesture: 'THUMBS_UP', icon: '👍', action: 'Mark Productive', color: 'text-blue-400' },
-      { gesture: 'THUMBS_DOWN', icon: '👎', action: 'Mark Break', color: 'text-purple-400' }
+      { gesture: 'FIST', icon: '✊', action: 'Start Session', color: 'text-green-400' },
+      { gesture: 'OPEN_PALM', icon: '✋', action: 'Pause (swipe to resume)', color: 'text-yellow-400' },
+      { gesture: 'PEACE', icon: '✌️', action: 'End Session', color: 'text-red-400' }
     ];
     
-    // Only show start gesture if enabled
-    if (gestureSettings.enableStartGesture) {
-      controls.unshift({ gesture: 'FIST', icon: '✊', action: 'Start Session', color: 'text-green-400' });
-    }
-    
     return controls;
-  }, [gestureSettings.enableStartGesture]);
+  }, []);
 
   // Session timer effect
   useEffect(() => {
@@ -131,16 +222,44 @@ const FocusZone: React.FC = memo(() => {
     return () => clearInterval(interval);
   }, [sessionActive, sessionPaused, isFocused, isHoldingPauseGesture]);
 
+  // Focus meter level effect - slowly grows when focused, drops when distracted
+  useEffect(() => {
+    if (!sessionActive) return;
+    
+    const interval = setInterval(() => {
+      setFocusMeterLevel(prev => {
+        // If paused, maintain current level (don't track)
+        if (sessionPaused || isHoldingPauseGesture) {
+          return prev;
+        }
+        
+        if (isFocused) {
+          // Slowly grow when focused (0.5% per second)
+          return Math.min(100, prev + 0.5);
+        } else {
+          // Drop all the way down when distracted
+          return 0;
+        }
+      });
+    }, 100); // Update every 100ms for smooth animation
+    
+    return () => clearInterval(interval);
+  }, [sessionActive, sessionPaused, isFocused, isHoldingPauseGesture]);
+
   // Initialize MediaPipe
   const initializeMediaPipe = useCallback(async () => {
     try {
       if (!videoRef.current) return;
 
-      // Initialize Face Mesh
-      const faceMesh = new FaceMesh({
-        locateFile: (file) => 
-          `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
-      });
+        // Initialize Face Mesh
+        const faceMesh = new FaceMesh({
+          locateFile: (file) => {
+            if (file.includes('face_detection_short_range.tflite')) {
+              return `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`;
+            }
+            return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
+          }
+        });
       
       faceMesh.setOptions({
         maxNumFaces: 1,
@@ -199,19 +318,84 @@ const FocusZone: React.FC = memo(() => {
     }
     
     const landmarks = results.multiFaceLandmarks[0];
-    const focus = calculateFocusScore(landmarks);
+    const focus = calculateFocusScore(landmarks, smoothedFocusScore);
     
-    setFocusScore(focus.score);
-    setIsFocused(focus.focused);
-    
-    // Track distractions
-    if (lastFocusState && !focus.focused) {
-      setDistractionCount(prev => prev + 1);
+    // Calculate eye positions and gaze direction for debug overlay
+    if ((showDebugOverlay || showHeatmap) && landmarks.length >= 468) {
+      const leftEye = landmarks[468];
+      const rightEye = landmarks[473];
+      const noseTip = landmarks[1];
+      
+      // Calculate gaze direction (simplified - using nose tip as reference)
+      const gazeX = noseTip.x;
+      const gazeY = noseTip.y;
+      
+      setEyePositions({
+        left: { x: leftEye.x, y: leftEye.y },
+        right: { x: rightEye.x, y: rightEye.y },
+        gaze: { x: gazeX, y: gazeY }
+      });
+      
+      // Update heatmap if active
+      if (showHeatmap) {
+        console.log('🔥 Updating heatmap with gaze:', gazeX, gazeY);
+        updateHeatmap(gazeX, gazeY);
+      }
     }
-    setLastFocusState(focus.focused);
+    
+    // Update smoothed focus score
+    setSmoothedFocusScore(focus.smoothedScore);
+    
+    // Buffer focus states for smoother transitions (faster updates)
+    setFocusStateBuffer(prev => {
+      const newBuffer = [...prev, focus.focused].slice(-3); // Keep last 3 readings
+      const focusedCount = newBuffer.filter(Boolean).length;
+      const smoothedFocused = focusedCount >= 2; // Need 2/3 readings to be focused
+      
+      setIsFocused(smoothedFocused);
+      
+      // Debug focus state changes
+      if (lastFocusState !== smoothedFocused) {
+        console.log('📊 FOCUS STATE CHANGE:', { 
+          lastFocusState, 
+          smoothedFocused, 
+          sessionPaused: sessionPausedRef.current,
+          isHoldingPauseGesture 
+        });
+      }
+      
+        // Count distraction every time you look away, but only once every 5 seconds (and only if session is active)
+        if (lastFocusState && !smoothedFocused && sessionActiveRef.current && !sessionPausedRef.current && !isHoldingPauseGesture) {
+          const currentTime = Date.now();
+          const timeSinceLastDistraction = currentTime - lastDistractionTime.current;
+          
+          // Only count if it's been at least 5 seconds since the last distraction
+          if (timeSinceLastDistraction >= 5000) {
+            console.log('📊 LOOKED AWAY - Counting distraction! (5s cooldown passed)');
+            setDistractionCount(prev => {
+              const newCount = prev + 1;
+              console.log('📊 Distraction count updated:', prev, '→', newCount);
+              return newCount;
+            });
+            lastDistractionTime.current = currentTime;
+          } else {
+            console.log('📊 LOOKED AWAY - Not counting (cooldown active,', Math.round((5000 - timeSinceLastDistraction)/1000), 's remaining)');
+          }
+          
+          setShowDistractionWarning(true);
+          // Hide warning after 2 seconds
+          setTimeout(() => setShowDistractionWarning(false), 2000);
+        }
+      setLastFocusState(smoothedFocused);
+      
+      return newBuffer;
+    });
+    
+    // Use smoothed score for display
+    setFocusScore(focus.smoothedScore);
     
     drawCanvas(results.image, landmarks, null);
-  }, [lastFocusState, cameraPaused]);
+  }, [lastFocusState, cameraPaused, smoothedFocusScore]);
 
   // Hand detection results handler
   const onHandResults = useCallback((results: any) => {
@@ -234,11 +418,85 @@ const FocusZone: React.FC = memo(() => {
     const gesture = detectGesture(landmarks);
     setCurrentGesture(gesture);
     
-    // Handle open palm gesture for pause-while-holding
-    if (gesture === 'OPEN_PALM' && sessionActive && !sessionPaused) {
-      setIsHoldingPauseGesture(true);
-    } else if (gesture !== 'OPEN_PALM') {
+    // Debug: Log gesture detection
+    if (gesture !== 'NONE' && gesture !== lastGesture) {
+      console.log(`🎯 Gesture detected: ${gesture} | Session active: ${sessionActiveRef.current} | Session paused: ${sessionPausedRef.current}`);
+    }
+    
+    // Special handling for FIST gesture - start session immediately when no session is active
+    if (gesture === 'FIST' && !sessionActiveRef.current && startSessionRef.current) {
+      // Prevent starting session immediately after ending one (5 second cooldown)
+      const timeSinceEnd = sessionEndTimeRef.current ? Date.now() - sessionEndTimeRef.current : Infinity;
+      console.log('🔍 FIST COOLDOWN CHECK:', { 
+        sessionEndTime: sessionEndTimeRef.current, 
+        currentTime: Date.now(),
+        timeSinceEnd, 
+        cooldownActive: timeSinceEnd < 5000,
+        cooldownSeconds: Math.round(timeSinceEnd/1000)
+      });
+      if (timeSinceEnd < 5000) {
+        console.log('⏳ FIST DETECTED - Ignoring due to cooldown period (', Math.round(timeSinceEnd/1000), 's ago)');
+        return;
+      }
+      console.log('🚀 FIST DETECTED - Starting session immediately');
+      startSessionRef.current();
+      return; // Skip the normal gesture hold logic
+    }
+    
+    // Special handling for PEACE gesture - end session immediately when session is active
+    if (gesture === 'PEACE' && sessionActiveRef.current) {
+      console.log('🚀 PEACE DETECTED - Ending session immediately');
+      endSession();
+      return; // Skip the normal gesture hold logic
+    }
+    
+    // Handle open palm gesture for immediate pause
+    if (gesture === 'OPEN_PALM' as any) {
+      console.log('🖐️ OPEN PALM DETECTED - Session active:', sessionActiveRef.current, 'Session paused:', sessionPausedRef.current);
+      
+      // If session is paused, check for swipe gesture to resume
+      if (sessionActiveRef.current && sessionPausedRef.current) {
+        console.log('🔄 Checking for swipe gesture to resume...');
+        detectSwipe(landmarks);
+        return; // Don't process pause logic if we're already paused
+      }
+      
+      if (sessionActiveRef.current) {
+        console.log('🖐️ OPEN PALM DETECTED - Pausing session');
+        // Immediately pause if not already paused
+        if (!sessionPausedRef.current) {
+          setSessionPaused(true);
+          console.log('⏸️ Session paused by open palm');
+        }
+        // Reset palm absence counter
+        setPalmAbsenceTime(0);
+        setIsHoldingPauseGesture(true);
+      } else {
+        console.log('⚠️ Open palm detected but no active session - use fist to start');
+      }
+    } else if (gesture !== 'OPEN_PALM' as any && sessionActiveRef.current && sessionPausedRef.current) {
+      // Palm is not detected, increment absence time
+      setPalmAbsenceTime(prev => {
+        const newTime = prev + 1;
+        if (newTime % 30 === 0) { // Log every second
+          console.log(`⏱️ Palm absence time: ${newTime} frames (${Math.round(newTime/30)}s)`);
+        }
+        return newTime;
+      });
       setIsHoldingPauseGesture(false);
+      
+      // Resume after 6 seconds (180 frames at 30fps)
+      if (palmAbsenceTime >= 180) {
+        console.log('▶️ Resuming session after 6 seconds without palm');
+        setSessionPaused(false);
+        setPalmAbsenceTime(0);
+      }
+    } else if (gesture !== 'OPEN_PALM' as any) {
+      setIsHoldingPauseGesture(false);
+      // Reset counter if session not active or not paused
+      if (!sessionActiveRef.current || !sessionPausedRef.current) {
+        setPalmAbsenceTime(0);
+      }
     }
     
     // Handle gesture hold time and triggering
@@ -273,18 +531,25 @@ const FocusZone: React.FC = memo(() => {
     
     // Don't draw hand landmarks, just keep the video feed clean
     drawCanvas(results.image, null, null);
-  }, [cameraPaused, lastGesture, gestureHoldTime, gestureTriggered, gestureSettings.gestureSensitivity, sessionActive, sessionPaused]);
+  }, [cameraPaused, lastGesture, gestureHoldTime, gestureTriggered, gestureSettings.gestureSensitivity, sessionActive, sessionPaused, palmAbsenceTime, detectSwipe]);
 
   // Session management functions
   const startSession = useCallback(() => {
+    console.log('🚀 STARTING SESSION - Setting sessionActive to true');
     setSessionActive(true);
     setSessionPaused(false);
     setCameraPaused(false);
     setSessionTime(0);
     setFocusedTime(0);
     setDistractionCount(0);
-    setSessionStartTime(Date.now());
+    lastDistractionTime.current = 0;
+    console.log('✅ Session start function completed');
   }, []);
+  
+  // Update startSession ref
+  useEffect(() => {
+    startSessionRef.current = startSession;
+  }, [startSession]);
 
   const resumeCamera = useCallback(() => {
     setCameraPaused(false);
@@ -295,25 +560,17 @@ const FocusZone: React.FC = memo(() => {
     setSessionPaused(prev => {
       const newState = !prev;
       console.log('✅ PAUSE STATE CHANGED FROM', prev, 'TO', newState);
+      
+      // If resuming from pause, set focus meter to 100%
+      if (prev && !newState) {
+        console.log('🎯 Resuming from pause - setting focus meter to 100%');
+        setFocusMeterLevel(100);
+      }
+      
       return newState;
     });
   }, [sessionPaused]);
 
-  const updateSessionStats = useCallback((newSession: FocusData) => {
-    setSessionStats(prev => {
-      const newTotalSessions = prev.totalSessions + 1;
-      const newTotalFocusTime = prev.totalFocusTime + newSession.focusedTime;
-      const newAverageFocusScore = (prev.averageFocusScore * prev.totalSessions + newSession.focusPercentage) / newTotalSessions;
-      
-      return {
-        totalSessions: newTotalSessions,
-        totalFocusTime: newTotalFocusTime,
-        averageFocusScore: newAverageFocusScore,
-        bestStreak: Math.max(prev.bestStreak, newSession.focusedTime),
-        currentStreak: newSession.focusPercentage > 70 ? prev.currentStreak + 1 : 0
-      };
-    });
-  }, []);
 
   const endSession = useCallback(() => {
     console.log('🛑 END SESSION FUNCTION CALLED - Saving data:', { sessionTime, focusedTime, distractionCount });
@@ -334,7 +591,6 @@ const FocusZone: React.FC = memo(() => {
       console.log('📚 Updated session history:', newHistory);
       return newHistory;
     });
-    updateSessionStats(sessionData);
     
     // Reset all session data
     console.log('🔄 Resetting session data...');
@@ -344,6 +600,10 @@ const FocusZone: React.FC = memo(() => {
     setFocusedTime(0);
     setDistractionCount(0);
     setIsHoldingPauseGesture(false);
+    const endTime = Date.now();
+    setSessionEndTime(endTime);
+    sessionEndTimeRef.current = endTime;
+    console.log('⏰ SESSION END TIME SET:', endTime);
     
     // Pause camera with overlay
     console.log('📷 Pausing camera with overlay...');
@@ -354,7 +614,7 @@ const FocusZone: React.FC = memo(() => {
       console.log('📷 Resuming camera...');
       setCameraPaused(false);
     }, 3000);
-  }, [sessionTime, focusedTime, distractionCount, updateSessionStats]);
+  }, [sessionTime, focusedTime, distractionCount]);
 
   // Gesture control handler
   const handleGestureControl = useCallback((gesture: string) => {
@@ -367,25 +627,16 @@ const FocusZone: React.FC = memo(() => {
     
     switch (gesture) {
       case 'FIST':
-        if (gestureSettings.enableStartGesture && !sessionActive) {
+        if (!sessionActive) {
           console.log('✅ Starting session with fist gesture');
           startSession();
         } else {
-          console.log('❌ Fist gesture ignored - start gesture disabled or session already active');
+          console.log('❌ Fist gesture ignored - session already active');
         }
         break;
       case 'OPEN_PALM':
-        if (sessionActive) {
-          console.log('✅ Toggling pause with open palm gesture');
-          if (gestureSettings.pauseToggle) {
-            console.log('🔄 Calling togglePause function');
-            togglePause();
-          } else {
-            console.log('❌ Pause toggle disabled in settings');
-          }
-        } else {
-          console.log('❌ Open palm gesture ignored - no active session');
-        }
+        // Now handled directly in onHandResults for immediate response
+        console.log('⚠️ Open palm pause is now handled in real-time detection');
         break;
       case 'PEACE':
         if (sessionActive) {
@@ -395,21 +646,15 @@ const FocusZone: React.FC = memo(() => {
           console.log('❌ Peace gesture ignored - no active session');
         }
         break;
-      case 'THUMBS_UP':
-        console.log('👍 Productive moment marked with thumbs up');
-        break;
-      case 'THUMBS_DOWN':
-        console.log('👎 Break time marked with thumbs down');
-        break;
       default:
         console.log('❓ Unknown gesture:', gesture);
     }
   }, [sessionActive, sessionPaused, gestureSettings, startSession, togglePause, endSession]);
 
-  // Focus score calculation
-  const calculateFocusScore = useCallback((landmarks: any[]) => {
+  // Focus score calculation with smoothing
+  const calculateFocusScore = useCallback((landmarks: any[], currentSmoothedScore: number) => {
     if (!landmarks || landmarks.length < 468) {
-      return { focused: false, score: 0 };
+      return { focused: false, score: 0, smoothedScore: 0 };
     }
 
     const leftEye = landmarks[468];
@@ -417,17 +662,28 @@ const FocusZone: React.FC = memo(() => {
     const noseTip = landmarks[1];
     const chin = landmarks[152];
     
-    // Calculate head pose angles
+    // Calculate head pose angles with more lenient thresholds
     const eyeDistance = Math.abs(leftEye.x - rightEye.x);
-    const centered = Math.abs(noseTip.x - 0.5) < 0.15;
-    const lookingForward = Math.abs(noseTip.y - chin.y) > 0.1;
+    const centered = Math.abs(noseTip.x - 0.5) < 0.2; // More lenient centering
+    const lookingForward = Math.abs(noseTip.y - chin.y) > 0.08; // More lenient forward looking
     
-    const focused = centered && eyeDistance > 0.12 && lookingForward;
-    const score = focused ? 85 + Math.random() * 15 : 20 + Math.random() * 30;
+    // More gradual focus detection
+    const focusStrength = (centered ? 0.4 : 0) + (eyeDistance > 0.1 ? 0.3 : 0) + (lookingForward ? 0.3 : 0);
+    const focused = focusStrength > 0.7; // Need 70% of criteria to be focused
+    
+    // Smoother score calculation with less random variation
+    const baseScore = focused ? 95 : 25;
+    const variation = focused ? Math.random() * 5 : Math.random() * 15;
+    const rawScore = baseScore + variation;
+    
+    // Apply smoothing to reduce rapid changes (faster updates)
+    const smoothingFactor = 0.6; // Higher = faster updates
+    const smoothedScore = Math.round(currentSmoothedScore * (1 - smoothingFactor) + rawScore * smoothingFactor);
     
     return { 
       focused, 
-      score: Math.round(score),
+      score: Math.round(rawScore),
+      smoothedScore,
       direction: noseTip.x > 0.6 ? 'right' : noseTip.x < 0.4 ? 'left' : 'forward'
     };
   }, []);
@@ -566,7 +822,7 @@ const FocusZone: React.FC = memo(() => {
 
   // Close dropdown when clicking outside
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
+    const handleClickOutside = () => {
       if (showDropdown) {
         setShowDropdown(false);
       }
@@ -588,82 +844,6 @@ const FocusZone: React.FC = memo(() => {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   }, []);
 
-  // Pomodoro timer callbacks
-  const handlePomodoroSessionStart = useCallback(() => {
-    setPomodoroActive(true);
-    setPomodoroPhase('work');
-    if (!sessionActive) {
-      startSession();
-    }
-  }, [sessionActive]);
-
-  const handlePomodoroSessionEnd = useCallback(() => {
-    setPomodoroActive(false);
-    setPomodoroPhase('work');
-    if (sessionActive) {
-      endSession();
-    }
-  }, [sessionActive]);
-
-  const handlePomodoroBreakStart = useCallback(() => {
-    setPomodoroPhase('break');
-    if (sessionActive) {
-      togglePause();
-    }
-  }, [sessionActive]);
-
-  const handlePomodoroBreakEnd = useCallback(() => {
-    setPomodoroPhase('work');
-    if (sessionPaused) {
-      togglePause();
-    }
-  }, [sessionPaused]);
-
-  // Focus streaks callback
-  const handleGoalUpdate = useCallback((goal: any) => {
-    console.log('Goal updated:', goal);
-    // Here you could save to localStorage or send to analytics
-  }, []);
-
-  // Task management callbacks
-  const handleTaskStart = useCallback((task: any) => {
-    setCurrentTaskId(task.id);
-    console.log('Task started:', task);
-  }, []);
-
-  const handleTaskEnd = useCallback((task: any, timeSpent: number) => {
-    setCurrentTaskId(undefined);
-    console.log('Task ended:', task, 'Time spent:', timeSpent);
-  }, []);
-
-  // Distraction tracking callbacks
-  const handleDistractionDetected = useCallback((type: string, severity: string) => {
-    console.log('Distraction detected:', type, severity);
-    // Update distraction count
-    setDistractionCount(prev => prev + 1);
-  }, []);
-
-  // Focus mode callbacks
-  const handleModeActivated = useCallback((mode: any) => {
-    setCurrentFocusMode(mode.id);
-    console.log('Focus mode activated:', mode);
-  }, []);
-
-  const handleModeDeactivated = useCallback(() => {
-    setCurrentFocusMode(undefined);
-    console.log('Focus mode deactivated');
-  }, []);
-
-  // Break reminder callbacks
-  const handleBreakStart = useCallback(() => {
-    console.log('Break started');
-    // Could pause focus tracking or show break overlay
-  }, []);
-
-  const handleBreakEnd = useCallback(() => {
-    console.log('Break ended');
-    // Resume focus tracking
-  }, []);
 
   return (
     <div 
@@ -689,75 +869,11 @@ const FocusZone: React.FC = memo(() => {
         animation: 'gradientShift 8s ease-in-out infinite'
       }}
     >
-      {/* Header */}
-      <motion.header
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6 }}
-        className="fixed top-0 left-0 right-0 z-50"
-      >
-        <div className="max-w-7xl mx-auto px-6 py-4">
-          <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-lg border border-gray-200 px-6 py-4">
-            <div className="flex items-center justify-between">
-              {/* Logo */}
-              <div className="flex items-center">
-                <h1 className="text-2xl font-black text-black tracking-tight">
-                  FOCUS ZONE
-                </h1>
-              </div>
 
-              {/* Navigation Links */}
-              <nav className="hidden md:flex items-center space-x-8">
-                <button 
-                  onClick={() => setCurrentAppPage(0)}
-                  className={`font-medium transition-colors ${
-                    currentAppPage === 0 
-                      ? 'text-black' 
-                      : 'text-gray-600 hover:text-black'
-                  }`}
-                >
-                  Home
-                </button>
-                <button 
-                  onClick={() => setCurrentAppPage(1)}
-                  className={`font-medium transition-colors ${
-                    currentAppPage === 1 
-                      ? 'text-black' 
-                      : 'text-gray-600 hover:text-black'
-                  }`}
-                >
-                  Features
-                </button>
-                <span className="text-gray-600 font-medium">Pricing</span>
-                <span className="text-gray-600 font-medium">Download</span>
-              </nav>
-
-              {/* Action Buttons */}
-              <div className="flex items-center space-x-4">
-                <button className="text-gray-600 hover:text-black transition-colors font-medium">
-                  Log in
-                </button>
-                <button 
-                  onClick={startSession}
-                  className="bg-black text-white px-6 py-2 rounded-lg font-medium hover:bg-gray-800 transition-colors"
-                >
-                  Start Focus
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </motion.header>
-
-      {/* Main App Container with Horizontal Sliding */}
-      <div className="relative overflow-hidden">
-        <div 
-          className="flex transition-transform duration-500 ease-in-out"
-          style={{ transform: `translateX(-${currentAppPage * 100}%)` }}
-        >
-          {/* Home Page */}
-          <div className="w-full flex-shrink-0">
-            <div className="container mx-auto px-6 pt-32">
+      {/* Main App Container */}
+      <div className="relative">
+        {/* Main Page */}
+        <div className="container mx-auto px-6 pt-8">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           
           {/* Video Feed */}
@@ -775,32 +891,160 @@ const FocusZone: React.FC = memo(() => {
               <div className={`w-full h-full rounded-2xl overflow-hidden transition-all duration-500 ${
                 handInFrame && !cameraPaused ? 'bg-black' : ''
               }`}>
-              {/* Marketing Image - Replace with actual camera feed */}
-              <div className="relative w-full h-full bg-gradient-to-br from-blue-50 to-purple-50">
-                <img
-                  src="/image.png"
-                  alt="Focus Zone User - AI-Powered Focus Tracking"
-                  className="w-full h-full object-cover"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
-                <div className="absolute bottom-4 left-4 text-white">
-                  <div className="text-sm font-medium">Focus Zone User</div>
-                  <div className="text-xs opacity-80">AI-Powered Focus Tracking</div>
-                </div>
-              </div>
-              
-              {/* Hidden camera elements for actual functionality */}
-              <video
-                ref={videoRef}
-                className="hidden"
-                playsInline
-              />
-              <canvas
-                ref={canvasRef}
-                width={1280}
-                height={720}
-                className="hidden"
-              />
+                    {/* Camera Feed */}
+                    <video
+                      ref={videoRef}
+                      className="w-full h-full object-cover scale-x-[-1]"
+                      playsInline
+                      autoPlay
+                      muted
+                    />
+                    <canvas
+                      ref={canvasRef}
+                      width={1280}
+                      height={720}
+                      className="absolute inset-0 w-full h-full"
+                    />
+                    
+                    {/* Debug Toggle Button - Bottom Right */}
+                    <button
+                      onClick={() => {
+                        setShowFocusPercentage(!showFocusPercentage);
+                        setShowDebugOverlay(!showDebugOverlay);
+                      }}
+                      className={`absolute bottom-4 right-4 w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-colors ${
+                        showDebugOverlay 
+                          ? 'bg-green-500 text-white' 
+                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      }`}
+                      title={showDebugOverlay ? 'Hide Debug Overlay' : 'Show Debug Overlay'}
+                    >
+                      &lt;/&gt;
+                    </button>
+                    
+                    {/* Heatmap Toggle Button - Bottom Right (next to debug) */}
+                    <button
+                      onClick={() => {
+                        console.log('🔥 Heatmap toggle clicked, current state:', showHeatmap);
+                        setShowHeatmap(!showHeatmap);
+                      }}
+                      className={`absolute bottom-4 right-14 w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-colors ${
+                        showHeatmap 
+                          ? 'bg-orange-500 text-white' 
+                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      }`}
+                      title={showHeatmap ? 'Hide Heatmap' : 'Show Heatmap'}
+                    >
+                      🔥
+                    </button>
+                    
+                    {/* Debug Overlay - Grid and Eye Tracking Lines */}
+                    {showDebugOverlay && (
+                      <div className="absolute inset-0 pointer-events-none">
+                        {/* Grid Overlay */}
+                        <div className="absolute inset-0 opacity-20">
+                          {/* Vertical lines */}
+                          {Array.from({ length: 16 }, (_, i) => (
+                            <div
+                              key={`v-${i}`}
+                              className="absolute top-0 bottom-0 w-px bg-cyan-400"
+                              style={{ left: `${(i + 1) * 6.25}%` }}
+                            />
+                          ))}
+                          {/* Horizontal lines */}
+                          {Array.from({ length: 12 }, (_, i) => (
+                            <div
+                              key={`h-${i}`}
+                              className="absolute left-0 right-0 h-px bg-cyan-400"
+                              style={{ top: `${(i + 1) * 8.33}%` }}
+                            />
+                          ))}
+                        </div>
+                        
+                        {/* Dynamic Eye Tracking Lines */}
+                        <div className="absolute inset-0">
+                          {eyePositions && (
+                            <>
+                              {/* Left eye tracking line */}
+                              <div 
+                                className="absolute w-px h-20 bg-red-400 opacity-60" 
+                                style={{ 
+                                  left: `${eyePositions.left.x * 100}%`, 
+                                  top: `${eyePositions.left.y * 100}%`,
+                                  transform: 'translateY(-50%)'
+                                }} 
+                              />
+                              {/* Right eye tracking line */}
+                              <div 
+                                className="absolute w-px h-20 bg-red-400 opacity-60" 
+                                style={{ 
+                                  left: `${eyePositions.right.x * 100}%`, 
+                                  top: `${eyePositions.right.y * 100}%`,
+                                  transform: 'translateY(-50%)'
+                                }} 
+                              />
+                              {/* Gaze direction lines from eyes */}
+                              <div 
+                                className="absolute w-16 h-px bg-green-400 opacity-70" 
+                                style={{ 
+                                  left: `${eyePositions.left.x * 100}%`, 
+                                  top: `${eyePositions.left.y * 100}%`,
+                                  transform: `translate(${eyePositions.gaze.x > eyePositions.left.x ? '0' : '-100%'}, -50%)`
+                                }} 
+                              />
+                              <div 
+                                className="absolute w-16 h-px bg-green-400 opacity-70" 
+                                style={{ 
+                                  left: `${eyePositions.right.x * 100}%`, 
+                                  top: `${eyePositions.right.y * 100}%`,
+                                  transform: `translate(${eyePositions.gaze.x > eyePositions.right.x ? '0' : '-100%'}, -50%)`
+                                }} 
+                              />
+                              {/* Gaze target indicator */}
+                              <div 
+                                className="absolute w-3 h-3 bg-yellow-400 rounded-full opacity-80" 
+                                style={{ 
+                                  left: `${eyePositions.gaze.x * 100}%`, 
+                                  top: `${eyePositions.gaze.y * 100}%`,
+                                  transform: 'translate(-50%, -50%)'
+                                }} 
+                              />
+                              {/* Eye Labels */}
+                              <div 
+                                className="absolute bg-red-500 text-white text-xs font-bold px-2 py-1 rounded"
+                                style={{ 
+                                  left: `${eyePositions.left.x * 100}%`, 
+                                  top: `${eyePositions.left.y * 100}%`,
+                                  transform: 'translate(-50%, -100%)'
+                                }} 
+                              >
+                                EYES
+                              </div>
+                              <div 
+                                className="absolute bg-red-500 text-white text-xs font-bold px-2 py-1 rounded"
+                                style={{ 
+                                  left: `${eyePositions.right.x * 100}%`, 
+                                  top: `${eyePositions.right.y * 100}%`,
+                                  transform: 'translate(-50%, -100%)'
+                                }} 
+                              >
+                                EYES
+                              </div>
+                            </>
+                          )}
+                          {/* Crosshair at center */}
+                          <div className="absolute w-6 h-px bg-yellow-400 opacity-80" style={{ left: '50%', top: '50%', transform: 'translateX(-50%)' }} />
+                          <div className="absolute w-px h-6 bg-yellow-400 opacity-80" style={{ left: '50%', top: '50%', transform: 'translateY(-50%)' }} />
+                        </div>
+                        
+                        {/* Debug Info Overlay - Bottom Left */}
+                        <div className="absolute bottom-4 left-4 bg-black/80 text-white p-2 rounded text-xs font-mono">
+                          <div>DEBUG MODE</div>
+                          <div>Grid: 16x12</div>
+                          <div>Eye Tracking: Active</div>
+                        </div>
+                      </div>
+                    )}
               </div>
               
               {cameraError && (
@@ -920,9 +1164,17 @@ const FocusZone: React.FC = memo(() => {
                 <div className="flex items-center gap-3">
                   <Eye className={`w-6 h-6 ${isFocused ? 'text-green-400' : 'text-red-400'}`} />
                   <div>
-                    <div className="text-white font-bold text-2xl">{focusScore}%</div>
+                    <div className="text-white font-bold text-2xl">
+                      {sessionPaused || isHoldingPauseGesture 
+                        ? 'Paused' 
+                        : (showFocusPercentage ? `${focusScore}%` : getFocusStatusText(focusScore))
+                      }
+                    </div>
                     <div className="text-sm text-gray-300">
-                      {isFocused ? 'Focused' : 'Distracted'}
+                      {sessionPaused || isHoldingPauseGesture 
+                        ? 'Session Paused' 
+                        : (isFocused ? 'Focused' : 'Distracted')
+                      }
                     </div>
                   </div>
                 </div>
@@ -983,7 +1235,7 @@ const FocusZone: React.FC = memo(() => {
                         : 'bg-white animate-pulse'
                     }`}></div>
                     {isHoldingPauseGesture 
-                      ? 'Holding to Pause' 
+                      ? 'Paused by Palm' 
                       : sessionPaused 
                         ? 'Session Paused' 
                         : 'Session Active'
@@ -1055,6 +1307,99 @@ const FocusZone: React.FC = memo(() => {
               </div>
             </motion.div>
             
+            {/* Heatmap Display - Underneath Camera */}
+            {showHeatmap && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 20 }}
+                transition={{ duration: 0.3 }}
+                className="mt-6 bg-white/10 backdrop-blur-sm rounded-xl p-6 border-2 border-black"
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-black font-bold text-lg">Laptop Screen Heatmap</h3>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        // Add test heat data
+                        setHeatmapData(prev => {
+                          const newData = prev.map(row => [...row]);
+                          // Add heat to center area
+                          for (let y = 6; y <= 8; y++) {
+                            for (let x = 8; x <= 12; x++) {
+                              newData[y][x] = Math.min(1, newData[y][x] + 0.5);
+                            }
+                          }
+                          return newData;
+                        });
+                      }}
+                      className="px-2 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600"
+                    >
+                      Test Heat
+                    </button>
+                    <div className="text-sm text-gray-600">
+                      Gaze tracking visualization
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Heatmap Grid */}
+                <div className="relative bg-gray-900 rounded-lg p-4 overflow-hidden">
+                  <div className="grid grid-cols-20 gap-0 w-full h-64">
+                    {heatmapData.map((row, y) =>
+                      row.map((heat, x) => (
+                        <div
+                          key={`${x}-${y}`}
+                          className="aspect-square border border-gray-700"
+                          style={{
+                            backgroundColor: `rgba(255, ${Math.floor(255 * (1 - heat))}, 0, ${Math.max(0.1, heat)})`
+                          }}
+                        />
+                      ))
+                    )}
+                  </div>
+                  
+                  {/* Heatmap Legend */}
+                  <div className="absolute top-2 right-2 bg-black/80 text-white p-2 rounded text-xs">
+                    <div className="flex items-center gap-2 mb-1">
+                      <div className="w-3 h-3 bg-red-500"></div>
+                      <span>High</span>
+                    </div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <div className="w-3 h-3 bg-yellow-500"></div>
+                      <span>Medium</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 bg-green-500"></div>
+                      <span>Low</span>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Heatmap Stats */}
+                <div className="mt-4 grid grid-cols-3 gap-4 text-sm">
+                  <div className="text-center">
+                    <div className="text-gray-600">Total Gaze Points</div>
+                    <div className="text-black font-bold">
+                      {heatmapData.flat().filter(h => h > 0).length}
+                    </div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-gray-600">Max Heat</div>
+                    <div className="text-black font-bold">
+                      {Math.max(...heatmapData.flat()).toFixed(2)}
+                    </div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-gray-600">Avg Heat</div>
+                    <div className="text-black font-bold">
+                      {(heatmapData.flat().reduce((a, b) => a + b, 0) / heatmapData.flat().length).toFixed(2)}
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+            
             {/* Focus Meter */}
             <motion.div
               initial={{ opacity: 0, x: 20 }}
@@ -1066,16 +1411,34 @@ const FocusZone: React.FC = memo(() => {
               <div className="relative w-full h-4 bg-gray-300 rounded-full overflow-hidden border border-black">
                 <motion.div 
                   className={`h-full transition-all duration-300 ${
-                    focusScore > 70 ? 'bg-green-500' :
-                    focusScore > 40 ? 'bg-yellow-500' :
+                    focusMeterLevel > 70 ? 'bg-green-500' :
+                    focusMeterLevel > 40 ? 'bg-yellow-500' :
                     'bg-red-500'
                   }`}
                   initial={{ width: 0 }}
-                  animate={{ width: `${focusScore}%` }}
-                  transition={{ duration: 0.5 }}
+                  animate={{ width: `${focusMeterLevel}%` }}
+                  transition={{ duration: 0.1 }}
                 />
               </div>
             </motion.div>
+            
+            {/* Distraction Warning */}
+            <AnimatePresence>
+              {showDistractionWarning && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.3 }}
+                  className="bg-red-500/90 backdrop-blur-sm text-white px-4 py-3 rounded-lg shadow-lg border border-red-400"
+                >
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+                    <span className="font-semibold text-sm">⚠️ Distraction Noted</span>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
             
             {/* Stats */}
             <motion.div
@@ -1095,7 +1458,12 @@ const FocusZone: React.FC = memo(() => {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-700">Focus Score</span>
-                  <span className="text-black font-bold">{focusScore}%</span>
+                  <span className="text-black font-bold">
+                    {sessionPaused || isHoldingPauseGesture 
+                      ? 'Paused' 
+                      : (showFocusPercentage ? `${focusScore}%` : getFocusStatusText(focusScore))
+                    }
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-700">Status</span>
@@ -1111,7 +1479,7 @@ const FocusZone: React.FC = memo(() => {
                   }`}>
                     {sessionActive 
                       ? (isHoldingPauseGesture 
-                          ? 'Holding to Pause' 
+                          ? 'Paused by Palm' 
                           : sessionPaused 
                             ? 'Paused' 
                             : 'Active'
@@ -1163,372 +1531,275 @@ const FocusZone: React.FC = memo(() => {
           </div>
               </div>
               
-              {/* Home Page Widgets */}
-              <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Pomodoro Widget */}
-                {showPomodoro && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.6 }}
-                  >
-                    <PomodoroTimer
-                      onSessionStart={handlePomodoroSessionStart}
-                      onSessionEnd={handlePomodoroSessionEnd}
-                      onBreakStart={handlePomodoroBreakStart}
-                      onBreakEnd={handlePomodoroBreakEnd}
-                    />
-                  </motion.div>
-                )}
-                
-                {/* Ambient Sounds Widget */}
-                {showAmbientSounds && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.7 }}
-                  >
-                    <AmbientSounds />
-                  </motion.div>
-                )}
-              </div>
             </div>
-          </div>
-          
-          {/* Features Page */}
-          <div className="w-full flex-shrink-0">
-            <div className="container mx-auto px-6 pt-32">
-              {/* Feature Kanban Section */}
-      <div className="container mx-auto px-6 py-12">
-        <div className="text-center mb-12">
-          <h2 className="text-4xl font-light text-black mb-4 tracking-tight">
-            Focus Zone Features
-          </h2>
-          <p className="text-gray-600 text-lg font-light">
-            Comprehensive tools for enhanced productivity
-          </p>
         </div>
         
-        {/* Kanban Board */}
-        <div className="relative">
-          {/* Navigation Arrows */}
-          <button 
-            onClick={() => setCurrentFeaturePage(Math.max(0, currentFeaturePage - 1))}
-            disabled={currentFeaturePage === 0}
-            className="absolute left-0 top-1/2 transform -translate-y-1/2 -translate-x-4 z-10 w-12 h-12 rounded-full border-2 border-gray-300 bg-white shadow-lg flex items-center justify-center text-gray-600 hover:text-black hover:border-gray-400 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+        {/* Focus Tools Dropdown Section */}
+        <div className="container mx-auto px-6 py-8">
+          {/* Dropdown Header */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6 }}
+            className="max-w-4xl mx-auto"
           >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
-          
-          <button 
-            onClick={() => setCurrentFeaturePage(Math.min(2, currentFeaturePage + 1))}
-            disabled={currentFeaturePage === 2}
-            className="absolute right-0 top-1/2 transform -translate-y-1/2 translate-x-4 z-10 w-12 h-12 rounded-full border-2 border-gray-300 bg-white shadow-lg flex items-center justify-center text-gray-600 hover:text-black hover:border-gray-400 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
-          </button>
-          
-          {/* Kanban Cards Container */}
-          <div className="overflow-hidden">
-            <div 
-              className="flex transition-transform duration-500 ease-in-out"
-              style={{ transform: `translateX(-${currentFeaturePage * 100}%)` }}
+            <button
+              onClick={() => setShowFocusTools(!showFocusTools)}
+              className="w-full bg-white border-2 border-gray-200 hover:border-gray-300 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 group"
             >
-              {/* Page 1: Core Features */}
-              <div className="w-full flex-shrink-0 px-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className="bg-white border-2 border-gray-200 rounded-xl p-6 hover:border-gray-300 transition-all duration-300">
-                    <div className="text-center">
-                      <div className={`w-16 h-16 mx-auto mb-4 rounded-full border-2 transition-all duration-300 ${
-                        showFocusModes 
-                          ? 'border-black bg-black' 
-                          : 'border-gray-300'
-                      }`}>
-                        <div className={`w-8 h-8 mx-auto mt-4 transition-all duration-300 ${
-                          showFocusModes ? 'bg-white' : 'bg-gray-400'
-                        }`} style={{
-                          clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)'
-                        }} />
-                      </div>
-                      <h3 className="text-lg font-semibold text-gray-800 mb-2">Focus Modes</h3>
-                      <p className="text-gray-600 text-sm mb-4">Customize your focus environment with different modes for various tasks.</p>
-                      <button 
-                        onClick={() => setShowFocusModes(!showFocusModes)}
-                        className={`w-full py-2 px-4 rounded-lg font-medium transition-all duration-300 ${
-                          showFocusModes 
-                            ? 'bg-black text-white' 
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        {showFocusModes ? 'Active' : 'Activate'}
-                      </button>
-                    </div>
-                  </div>
-                  
-                  <div className="bg-white border-2 border-gray-200 rounded-xl p-6 hover:border-gray-300 transition-all duration-300">
-                    <div className="text-center">
-                      <div className={`w-16 h-16 mx-auto mb-4 rounded-full border-2 transition-all duration-300 ${
-                        showPomodoro 
-                          ? 'border-black bg-black' 
-                          : 'border-gray-300'
-                      }`}>
-                        <div className={`w-8 h-8 mx-auto mt-4 transition-all duration-300 ${
-                          showPomodoro ? 'bg-white' : 'bg-gray-400'
-                        }`} style={{
-                          borderRadius: '50%',
-                          border: '2px solid currentColor'
-                        }} />
-                      </div>
-                      <h3 className="text-lg font-semibold text-gray-800 mb-2">Pomodoro Timer</h3>
-                      <p className="text-gray-600 text-sm mb-4">Work in focused 25-minute intervals with built-in break reminders.</p>
-                      <button 
-                        onClick={() => setShowPomodoro(!showPomodoro)}
-                        className={`w-full py-2 px-4 rounded-lg font-medium transition-all duration-300 ${
-                          showPomodoro 
-                            ? 'bg-black text-white' 
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        {showPomodoro ? 'Active' : 'Activate'}
-                      </button>
-                    </div>
-                  </div>
-                  
-                  <div className="bg-white border-2 border-gray-200 rounded-xl p-6 hover:border-gray-300 transition-all duration-300">
-                    <div className="text-center">
-                      <div className={`w-16 h-16 mx-auto mb-4 rounded-full border-2 transition-all duration-300 ${
-                        showTasks 
-                          ? 'border-black bg-black' 
-                          : 'border-gray-300'
-                      }`}>
-                        <div className={`w-8 h-8 mx-auto mt-4 transition-all duration-300 ${
-                          showTasks ? 'bg-white' : 'bg-gray-400'
-                        }`} style={{
-                          border: '2px solid currentColor',
-                          borderRadius: '2px'
-                        }} />
-                      </div>
-                      <h3 className="text-lg font-semibold text-gray-800 mb-2">Task Manager</h3>
-                      <p className="text-gray-600 text-sm mb-4">Link focus sessions to specific tasks and track time per project.</p>
-                      <button 
-                        onClick={() => setShowTasks(!showTasks)}
-                        className={`w-full py-2 px-4 rounded-lg font-medium transition-all duration-300 ${
-                          showTasks 
-                            ? 'bg-black text-white' 
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        {showTasks ? 'Active' : 'Activate'}
-                      </button>
-                    </div>
-                  </div>
+              <div className="flex items-center justify-between">
+                <div className="text-left">
+                  <h2 className="text-3xl font-bold text-black mb-2 group-hover:text-gray-700 transition-colors">
+                    Focus Tools
+                  </h2>
+                  <p className="text-gray-600 text-lg">
+                    Essential productivity tools designed to enhance your focus and workflow
+                  </p>
                 </div>
+                <motion.div
+                  animate={{ rotate: showFocusTools ? 180 : 0 }}
+                  transition={{ duration: 0.3 }}
+                  className="w-8 h-8 flex items-center justify-center"
+                >
+                  <svg 
+                    className="w-6 h-6 text-gray-600 group-hover:text-black transition-colors" 
+                    fill="none" 
+                    stroke="currentColor" 
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </motion.div>
               </div>
-              
-              {/* Page 2: Tracking Features */}
-              <div className="w-full flex-shrink-0 px-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className="bg-white border-2 border-gray-200 rounded-xl p-6 hover:border-gray-300 transition-all duration-300">
-                    <div className="text-center">
-                      <div className={`w-16 h-16 mx-auto mb-4 rounded-full border-2 transition-all duration-300 ${
-                        showStreaks 
-                          ? 'border-black bg-black' 
-                          : 'border-gray-300'
-                      }`}>
-                        <div className={`w-8 h-8 mx-auto mt-4 transition-all duration-300 ${
-                          showStreaks ? 'bg-white' : 'bg-gray-400'
-                        }`} style={{
-                          background: 'linear-gradient(45deg, transparent 30%, currentColor 30%, currentColor 70%, transparent 70%)'
-                        }} />
-                      </div>
-                      <h3 className="text-lg font-semibold text-gray-800 mb-2">Focus Streaks</h3>
-                      <p className="text-gray-600 text-sm mb-4">Track consecutive days of focused work and celebrate milestones.</p>
-                      <button 
-                        onClick={() => setShowStreaks(!showStreaks)}
-                        className={`w-full py-2 px-4 rounded-lg font-medium transition-all duration-300 ${
-                          showStreaks 
-                            ? 'bg-black text-white' 
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        {showStreaks ? 'Active' : 'Activate'}
-                      </button>
-                    </div>
-                  </div>
-                  
-                  <div className="bg-white border-2 border-gray-200 rounded-xl p-6 hover:border-gray-300 transition-all duration-300">
-                    <div className="text-center">
-                      <div className={`w-16 h-16 mx-auto mb-4 rounded-full border-2 transition-all duration-300 ${
-                        showDistractions 
-                          ? 'border-black bg-black' 
-                          : 'border-gray-300'
-                      }`}>
-                        <div className={`w-8 h-8 mx-auto mt-4 transition-all duration-300 ${
-                          showDistractions ? 'bg-white' : 'bg-gray-400'
-                        }`} style={{
-                          border: '2px solid currentColor',
-                          borderRadius: '50%',
-                          position: 'relative'
-                        }}>
-                          <div className="absolute top-1/2 left-1/2 w-2 h-2 bg-current rounded-full transform -translate-x-1/2 -translate-y-1/2" />
-                        </div>
-                      </div>
-                      <h3 className="text-lg font-semibold text-gray-800 mb-2">Distraction Tracker</h3>
-                      <p className="text-gray-600 text-sm mb-4">Categorize and analyze distractions to improve focus habits.</p>
-                      <button 
-                        onClick={() => setShowDistractions(!showDistractions)}
-                        className={`w-full py-2 px-4 rounded-lg font-medium transition-all duration-300 ${
-                          showDistractions 
-                            ? 'bg-black text-white' 
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        {showDistractions ? 'Active' : 'Activate'}
-                      </button>
-                    </div>
-                  </div>
-                  
-                  <div className="bg-white border-2 border-gray-200 rounded-xl p-6 hover:border-gray-300 transition-all duration-300">
-                    <div className="text-center">
-                      <button 
-                        onClick={() => setShowAnalytics(true)}
-                        className="w-full text-left"
-                      >
-                        <div className="w-16 h-16 mx-auto mb-4 rounded-full border-2 border-gray-300">
-                          <div className="w-8 h-8 mx-auto mt-4 bg-gray-400" style={{
-                            background: 'linear-gradient(45deg, transparent 40%, currentColor 40%, currentColor 60%, transparent 60%)'
-                          }} />
-                        </div>
-                        <h3 className="text-lg font-semibold text-gray-800 mb-2">Analytics Dashboard</h3>
-                        <p className="text-gray-600 text-sm mb-4">View detailed insights and trends from your focus sessions.</p>
-                        <div className="w-full py-2 px-4 rounded-lg font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 transition-all duration-300">
-                          View Analytics
-                        </div>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              
-              {/* Page 3: Wellness Features */}
-              <div className="w-full flex-shrink-0 px-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className="bg-white border-2 border-gray-200 rounded-xl p-6 hover:border-gray-300 transition-all duration-300">
-                    <div className="text-center">
-                      <div className={`w-16 h-16 mx-auto mb-4 rounded-full border-2 transition-all duration-300 ${
-                        showAmbientSounds 
-                          ? 'border-black bg-black' 
-                          : 'border-gray-300'
-                      }`}>
-                        <div className={`w-8 h-8 mx-auto mt-4 transition-all duration-300 ${
-                          showAmbientSounds ? 'bg-white' : 'bg-gray-400'
-                        }`} style={{
-                          background: 'radial-gradient(circle, currentColor 2px, transparent 2px)',
-                          backgroundSize: '4px 4px'
-                        }} />
-                      </div>
-                      <h3 className="text-lg font-semibold text-gray-800 mb-2">Ambient Sounds</h3>
-                      <p className="text-gray-600 text-sm mb-4">Enhance focus with curated background sounds and music.</p>
-                      <button 
-                        onClick={() => setShowAmbientSounds(!showAmbientSounds)}
-                        className={`w-full py-2 px-4 rounded-lg font-medium transition-all duration-300 ${
-                          showAmbientSounds 
-                            ? 'bg-black text-white' 
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        {showAmbientSounds ? 'Active' : 'Activate'}
-                      </button>
-                    </div>
-                  </div>
-                  
-                  <div className="bg-white border-2 border-gray-200 rounded-xl p-6 hover:border-gray-300 transition-all duration-300">
-                    <div className="text-center">
-                      <div className={`w-16 h-16 mx-auto mb-4 rounded-full border-2 transition-all duration-300 ${
-                        showBreakReminders 
-                          ? 'border-black bg-black' 
-                          : 'border-gray-300'
-                      }`}>
-                        <div className={`w-8 h-8 mx-auto mt-4 transition-all duration-300 ${
-                          showBreakReminders ? 'bg-white' : 'bg-gray-400'
-                        }`} style={{
-                          border: '2px solid currentColor',
-                          borderRadius: '50%',
-                          position: 'relative'
-                        }}>
-                          <div className="absolute top-0 left-1/2 w-0.5 h-2 bg-current transform -translate-x-1/2" />
-                          <div className="absolute top-1/2 left-1/2 w-2 h-0.5 bg-current transform -translate-x-1/2 -translate-y-1/2" />
-                        </div>
-                      </div>
-                      <h3 className="text-lg font-semibold text-gray-800 mb-2">Break Reminders</h3>
-                      <p className="text-gray-600 text-sm mb-4">Get notified to take breaks and practice eye care exercises.</p>
-                      <button 
-                        onClick={() => setShowBreakReminders(!showBreakReminders)}
-                        className={`w-full py-2 px-4 rounded-lg font-medium transition-all duration-300 ${
-                          showBreakReminders 
-                            ? 'bg-black text-white' 
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        {showBreakReminders ? 'Active' : 'Activate'}
-                      </button>
-                    </div>
-                  </div>
-                  
-                  <div className="bg-white border-2 border-gray-200 rounded-xl p-6 hover:border-gray-300 transition-all duration-300">
-                    <div className="text-center">
-                      <div className="w-16 h-16 mx-auto mb-4 rounded-full border-2 border-gray-300">
-                        <div className="w-8 h-8 mx-auto mt-4 bg-gray-400" style={{
-                          background: 'linear-gradient(45deg, transparent 30%, currentColor 30%, currentColor 70%, transparent 70%)'
-                        }} />
-                      </div>
-                      <h3 className="text-lg font-semibold text-gray-800 mb-2">Coming Soon</h3>
-                      <p className="text-gray-600 text-sm mb-4">More features are being developed to enhance your focus experience.</p>
-                      <div className="w-full py-2 px-4 rounded-lg font-medium bg-gray-100 text-gray-500">
-                        In Development
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+            </button>
+          </motion.div>
           
-          {/* Page Indicators */}
-          <div className="flex justify-center mt-8 space-x-2">
-            {[0, 1, 2].map((page) => (
-              <button
-                key={page}
-                onClick={() => setCurrentFeaturePage(page)}
-                className={`w-3 h-3 rounded-full transition-all duration-300 ${
-                  currentFeaturePage === page 
-                    ? 'bg-black' 
-                    : 'bg-gray-300 hover:bg-gray-400'
+          {/* Collapsible Content */}
+          <AnimatePresence>
+            {showFocusTools && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.4, ease: "easeInOut" }}
+                className="max-w-4xl mx-auto overflow-hidden"
+              >
+                <div className="pt-8">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              
+              {/* Focus Modes Card */}
+              <motion.div
+                initial={{ opacity: 0, y: 30 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, delay: 0.1 }}
+                className={`relative group transition-all duration-500 ${
+                  showFocusModes 
+                    ? 'transform scale-105' 
+                    : 'hover:transform hover:scale-102'
                 }`}
-              />
-            ))}
-          </div>
-              </div>
-            </div>
-          </div>
+              >
+                <div className={`relative overflow-hidden rounded-3xl p-8 transition-all duration-500 ${
+                  showFocusModes 
+                    ? 'bg-gradient-to-br from-black via-gray-900 to-black text-white shadow-2xl' 
+                    : 'bg-white border-2 border-gray-200 hover:border-gray-300 shadow-lg hover:shadow-xl'
+                }`}>
+                  
+                  {/* Background Pattern */}
+                  <div className={`absolute inset-0 opacity-5 transition-opacity duration-500 ${
+                    showFocusModes ? 'opacity-10' : 'opacity-5'
+                  }`}>
+                    <div className="absolute inset-0" style={{
+                      backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23000000' fill-opacity='0.1'%3E%3Cpolygon points='30,0 60,30 30,60 0,30'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
+                      backgroundSize: '60px 60px'
+                    }} />
+                  </div>
+                  
+                  {/* Content */}
+                  <div className="relative z-10">
+                    {/* Icon */}
+                    <div className={`w-20 h-20 mx-auto mb-6 rounded-2xl flex items-center justify-center transition-all duration-500 ${
+                      showFocusModes 
+                        ? 'bg-white/20 backdrop-blur-sm' 
+                        : 'bg-gray-100'
+                    }`}>
+                      <div className={`w-10 h-10 transition-all duration-500 ${
+                        showFocusModes ? 'text-white' : 'text-gray-600'
+                      }`} style={{
+                        clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)',
+                        background: 'currentColor'
+                      }} />
+                    </div>
+                    
+                    {/* Title */}
+                    <h3 className={`text-2xl font-bold mb-4 transition-colors duration-500 ${
+                      showFocusModes ? 'text-white' : 'text-gray-800'
+                    }`}>
+                      Focus Modes
+                    </h3>
+                    
+                    {/* Description */}
+                    <p className={`text-lg mb-8 leading-relaxed transition-colors duration-500 ${
+                      showFocusModes ? 'text-gray-200' : 'text-gray-600'
+                    }`}>
+                      Customize your focus environment with specialized modes for different tasks and workflows.
+                    </p>
+                    
+                    {/* Features List */}
+                    <div className={`space-y-3 mb-8 transition-colors duration-500 ${
+                      showFocusModes ? 'text-gray-200' : 'text-gray-600'
+                    }`}>
+                      <div className="flex items-center">
+                        <div className={`w-2 h-2 rounded-full mr-3 transition-colors duration-500 ${
+                          showFocusModes ? 'bg-white' : 'bg-gray-400'
+                        }`} />
+                        Deep Work Mode
+                      </div>
+                      <div className="flex items-center">
+                        <div className={`w-2 h-2 rounded-full mr-3 transition-colors duration-500 ${
+                          showFocusModes ? 'bg-white' : 'bg-gray-400'
+                        }`} />
+                        Creative Flow Mode
+                      </div>
+                      <div className="flex items-center">
+                        <div className={`w-2 h-2 rounded-full mr-3 transition-colors duration-500 ${
+                          showFocusModes ? 'bg-white' : 'bg-gray-400'
+                        }`} />
+                        Study Session Mode
+                      </div>
+                    </div>
+                    
+                    {/* Button */}
+                    <button 
+                      onClick={() => setShowFocusModes(!showFocusModes)}
+                      className={`w-full py-4 px-6 rounded-xl font-bold text-lg transition-all duration-500 ${
+                        showFocusModes 
+                          ? 'bg-white text-black hover:bg-gray-100' 
+                          : 'bg-black text-white hover:bg-gray-800'
+                      }`}
+                    >
+                      {showFocusModes ? '✓ Active' : 'Activate Focus Modes'}
+                    </button>
+                  </div>
+                  
+                  {/* Glow Effect */}
+                  {showFocusModes && (
+                    <div className="absolute inset-0 rounded-3xl bg-gradient-to-r from-blue-500/20 via-purple-500/20 to-pink-500/20 animate-pulse" />
+                  )}
+                </div>
+              </motion.div>
+              
+              {/* Pomodoro Timer Card */}
+              <motion.div
+                initial={{ opacity: 0, y: 30 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, delay: 0.2 }}
+                className={`relative group transition-all duration-500 ${
+                  showPomodoro 
+                    ? 'transform scale-105' 
+                    : 'hover:transform hover:scale-102'
+                }`}
+              >
+                <div className={`relative overflow-hidden rounded-3xl p-8 transition-all duration-500 ${
+                  showPomodoro 
+                    ? 'bg-gradient-to-br from-orange-500 via-red-500 to-pink-500 text-white shadow-2xl' 
+                    : 'bg-white border-2 border-gray-200 hover:border-gray-300 shadow-lg hover:shadow-xl'
+                }`}>
+                  
+                  {/* Background Pattern */}
+                  <div className={`absolute inset-0 opacity-5 transition-opacity duration-500 ${
+                    showPomodoro ? 'opacity-10' : 'opacity-5'
+                  }`}>
+                    <div className="absolute inset-0" style={{
+                      backgroundImage: `url("data:image/svg+xml,%3Csvg width='40' height='40' viewBox='0 0 40 40' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23000000' fill-opacity='0.1'%3E%3Ccircle cx='20' cy='20' r='2'/%3E%3C/g%3E%3C/svg%3E")`,
+                      backgroundSize: '40px 40px'
+                    }} />
+                  </div>
+                  
+                  {/* Content */}
+                  <div className="relative z-10">
+                    {/* Icon */}
+                    <div className={`w-20 h-20 mx-auto mb-6 rounded-2xl flex items-center justify-center transition-all duration-500 ${
+                      showPomodoro 
+                        ? 'bg-white/20 backdrop-blur-sm' 
+                        : 'bg-gray-100'
+                    }`}>
+                      <div className={`w-10 h-10 rounded-full border-4 transition-all duration-500 ${
+                        showPomodoro ? 'border-white' : 'border-gray-600'
+                      }`} />
+                    </div>
+                    
+                    {/* Title */}
+                    <h3 className={`text-2xl font-bold mb-4 transition-colors duration-500 ${
+                      showPomodoro ? 'text-white' : 'text-gray-800'
+                    }`}>
+                      Pomodoro Timer
+                    </h3>
+                    
+                    {/* Description */}
+                    <p className={`text-lg mb-8 leading-relaxed transition-colors duration-500 ${
+                      showPomodoro ? 'text-gray-200' : 'text-gray-600'
+                    }`}>
+                      Work in focused 25-minute intervals with built-in break reminders and productivity tracking.
+                    </p>
+                    
+                    {/* Features List */}
+                    <div className={`space-y-3 mb-8 transition-colors duration-500 ${
+                      showPomodoro ? 'text-gray-200' : 'text-gray-600'
+                    }`}>
+                      <div className="flex items-center">
+                        <div className={`w-2 h-2 rounded-full mr-3 transition-colors duration-500 ${
+                          showPomodoro ? 'bg-white' : 'bg-gray-400'
+                        }`} />
+                        25-minute work sessions
+                      </div>
+                      <div className="flex items-center">
+                        <div className={`w-2 h-2 rounded-full mr-3 transition-colors duration-500 ${
+                          showPomodoro ? 'bg-white' : 'bg-gray-400'
+                        }`} />
+                        5-minute short breaks
+                      </div>
+                      <div className="flex items-center">
+                        <div className={`w-2 h-2 rounded-full mr-3 transition-colors duration-500 ${
+                          showPomodoro ? 'bg-white' : 'bg-gray-400'
+                        }`} />
+                        15-minute long breaks
+                      </div>
+                    </div>
+                    
+                    {/* Button */}
+                    <button 
+                      onClick={() => setShowPomodoro(!showPomodoro)}
+                      className={`w-full py-4 px-6 rounded-xl font-bold text-lg transition-all duration-500 ${
+                        showPomodoro 
+                          ? 'bg-white text-orange-600 hover:bg-gray-100' 
+                          : 'bg-orange-500 text-white hover:bg-orange-600'
+                      }`}
+                    >
+                      {showPomodoro ? '✓ Active' : 'Activate Pomodoro'}
+                    </button>
+                  </div>
+                  
+                  {/* Glow Effect */}
+                  {showPomodoro && (
+                    <div className="absolute inset-0 rounded-3xl bg-gradient-to-r from-orange-500/20 via-red-500/20 to-pink-500/20 animate-pulse" />
+                  )}
+                </div>
+              </motion.div>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
-      </div>
-    </div>
 
+        {/* Enhanced Analytics Modal */}
+        <EnhancedAnalytics
+          sessionHistory={sessionHistory}
+          isOpen={showAnalytics}
+          onClose={() => setShowAnalytics(false)}
+        />
 
-      {/* Enhanced Analytics Modal */}
-      <EnhancedAnalytics
-        sessionHistory={sessionHistory}
-        isOpen={showAnalytics}
-        onClose={() => setShowAnalytics(false)}
-      />
-
-
-      {/* Settings Modal */}
+        {/* Settings Modal */}
       <AnimatePresence>
         {showSettings && (
           <motion.div
@@ -1549,23 +1820,6 @@ const FocusZone: React.FC = memo(() => {
             >
               <h3 className="text-black font-bold text-xl mb-4">Gesture Settings</h3>
               <div className="space-y-6">
-                {/* Enable Start Gesture */}
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="text-black font-semibold">Enable Start Gesture</h4>
-                    <p className="text-sm text-gray-600">Allow starting sessions with fist gesture</p>
-                  </div>
-                  <button
-                    onClick={() => setGestureSettings(prev => ({ ...prev, enableStartGesture: !prev.enableStartGesture }))}
-                    className={`relative w-12 h-6 rounded-full transition-colors ${
-                      gestureSettings.enableStartGesture ? 'bg-green-500' : 'bg-gray-300'
-                    }`}
-                  >
-                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
-                      gestureSettings.enableStartGesture ? 'translate-x-7' : 'translate-x-1'
-                    }`} />
-                  </button>
-                </div>
 
                 {/* Pause Toggle Mode */}
                 <div className="flex items-center justify-between">
