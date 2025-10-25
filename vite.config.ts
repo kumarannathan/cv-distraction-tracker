@@ -25,6 +25,6 @@ export default defineConfig({
   },
   // Enable compression
   server: {
-    compress: true,
+    // compress: true, // Not supported in current Vite version
   },
 })

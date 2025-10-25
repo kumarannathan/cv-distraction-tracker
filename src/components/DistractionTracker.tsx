@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, memo } from 'react';
+import React, { useState, useCallback, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Smartphone, 
@@ -7,9 +7,7 @@ import {
   Volume2, 
   Coffee, 
   AlertTriangle,
-  TrendingUp,
   BarChart3,
-  Target,
   Clock,
   Zap
 } from 'lucide-react';
@@ -366,7 +364,7 @@ const DistractionTracker: React.FC<DistractionTrackerProps> = memo(({
                 cy="50%"
                 outerRadius={100}
                 dataKey="value"
-                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                label={({ name, percent }: any) => `${name} ${(percent * 100).toFixed(0)}%`}
               >
                 {pieData.map((entry, index) => (
                   <Cell key={`cell-${index}`} fill={entry.color} />

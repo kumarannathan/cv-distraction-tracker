@@ -29,18 +29,18 @@ const FocusZone: React.FC = memo(() => {
   const [isFocused, setIsFocused] = useState(false);
   const [smoothedFocusScore, setSmoothedFocusScore] = useState(0);
   const [focusMeterLevel, setFocusMeterLevel] = useState(0);
-  const [focusStateBuffer, setFocusStateBuffer] = useState<boolean[]>([]);
-  const [showDistractionWarning, setShowDistractionWarning] = useState(false);
+  // const [focusStateBuffer, setFocusStateBuffer] = useState<boolean[]>([]);
+  // const [showDistractionWarning, setShowDistractionWarning] = useState(false);
   const [currentGesture, setCurrentGesture] = useState('NONE');
   const [sessionActive, setSessionActive] = useState(false);
   const [sessionPaused, setSessionPaused] = useState(false);
   const [sessionTime, setSessionTime] = useState(0);
   const [focusedTime, setFocusedTime] = useState(0);
   const [distractionCount, setDistractionCount] = useState(0);
-  const [lastFocusState, setLastFocusState] = useState(true);
+  // const [lastFocusState, setLastFocusState] = useState(true);
   const [showFocusPercentage, setShowFocusPercentage] = useState(false);
   const lastDistractionTime = useRef<number>(0);
-  const [sessionEndTime, setSessionEndTime] = useState<number | null>(null);
+  // const [sessionEndTime, setSessionEndTime] = useState<number | null>(null);
   const sessionEndTimeRef = useRef<number | null>(null);
   const [showDebugOverlay, setShowDebugOverlay] = useState(false);
   const [eyePositions, setEyePositions] = useState<{left: {x: number, y: number}, right: {x: number, y: number}, gaze: {x: number, y: number}} | null>(null);
@@ -123,7 +123,7 @@ const FocusZone: React.FC = memo(() => {
   const [palmAbsenceTime, setPalmAbsenceTime] = useState(0);
   
   // Swipe detection state
-  const [palmMovementHistory, setPalmMovementHistory] = useState<{x: number, y: number, timestamp: number}[]>([]);
+  // const [palmMovementHistory, setPalmMovementHistory] = useState<{x: number, y: number, timestamp: number}[]>([]);
   
   // Use refs to get current state values in callbacks
   const sessionActiveRef = useRef(sessionActive);
@@ -144,55 +144,55 @@ const FocusZone: React.FC = memo(() => {
     if (!landmarks || landmarks.length === 0) return false;
     
     // Get the center of the palm (middle finger MCP joint)
-    const palmCenter = landmarks[9]; // Middle finger MCP
-    const currentTime = Date.now();
+    // const palmCenter = landmarks[9]; // Middle finger MCP
+    // const currentTime = Date.now();
     
     // Add current position to history
-    setPalmMovementHistory(prev => {
-      const newHistory = [...prev, { x: palmCenter.x, y: palmCenter.y, timestamp: currentTime }];
-      // Keep only last 10 positions (about 1/3 second at 30fps)
-      return newHistory.slice(-10);
-    });
+    // setPalmMovementHistory(prev => {
+    //   const newHistory = [...prev, { x: palmCenter.x, y: palmCenter.y, timestamp: currentTime }];
+    //   // Keep only last 10 positions (about 1/3 second at 30fps)
+    //   return newHistory.slice(-10);
+    // });
     
     // Check if we have enough movement history
-    setPalmMovementHistory(current => {
-      if (current.length < 5) return current;
-      
-      const recent = current.slice(-5); // Last 5 positions
-      const start = recent[0];
-      const end = recent[recent.length - 1];
+    // setPalmMovementHistory(current => {
+    //   if (current.length < 5) return current;
+    //   
+    //   const recent = current.slice(-5); // Last 5 positions
+    //   const start = recent[0];
+    //   const end = recent[recent.length - 1];
       
       // Calculate total distance moved
-      const deltaX = end.x - start.x;
-      const deltaY = end.y - start.y;
-      const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+      // const deltaX = end.x - start.x;
+      // const deltaY = end.y - start.y;
+      // const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
       
       // Check if it's a significant horizontal movement (swipe) - more sensitive
-      const isHorizontalSwipe = Math.abs(deltaX) > 0.15 && Math.abs(deltaY) < 0.3;
-      const isSignificantMovement = distance > 0.15;
+      // const isHorizontalSwipe = Math.abs(deltaX) > 0.15 && Math.abs(deltaY) < 0.3;
+      // const isSignificantMovement = distance > 0.15;
       
       // Debug logging
-      if (current.length >= 5) {
-        console.log('🔄 Swipe check:', {
-          deltaX: deltaX.toFixed(3),
-          deltaY: deltaY.toFixed(3),
-          distance: distance.toFixed(3),
-          isHorizontalSwipe,
-          isSignificantMovement
-        });
-      }
+      // if (current.length >= 5) {
+      //   console.log('🔄 Swipe check:', {
+      //     deltaX: deltaX.toFixed(3),
+      //     deltaY: deltaY.toFixed(3),
+      //     distance: distance.toFixed(3),
+      //     isHorizontalSwipe,
+      //     isSignificantMovement
+      //   });
+      // }
       
-      if (isHorizontalSwipe && isSignificantMovement) {
-        console.log('👋 SWIPE DETECTED! Resuming session');
-        setSessionPaused(false);
-        setPalmAbsenceTime(0);
-        setIsHoldingPauseGesture(false);
+      // if (isHorizontalSwipe && isSignificantMovement) {
+      //   console.log('👋 SWIPE DETECTED! Resuming session');
+      //   setSessionPaused(false);
+      //   setPalmAbsenceTime(0);
+      //   setIsHoldingPauseGesture(false);
         // Clear movement history after detecting swipe
-        return [];
-      }
+        // return [];
+      // }
       
-      return current;
-    });
+      // return current;
+    // });
     
     return false;
   }, []);
@@ -347,55 +347,55 @@ const FocusZone: React.FC = memo(() => {
     setSmoothedFocusScore(focus.smoothedScore);
     
     // Buffer focus states for smoother transitions (faster updates)
-    setFocusStateBuffer(prev => {
-      const newBuffer = [...prev, focus.focused].slice(-3); // Keep last 3 readings
-      const focusedCount = newBuffer.filter(Boolean).length;
-      const smoothedFocused = focusedCount >= 2; // Need 2/3 readings to be focused
-      
-      setIsFocused(smoothedFocused);
+    // setFocusStateBuffer(prev => {
+    //   const newBuffer = [...prev, focus.focused].slice(-3); // Keep last 3 readings
+    //   const focusedCount = newBuffer.filter(Boolean).length;
+    //   const smoothedFocused = focusedCount >= 2; // Need 2/3 readings to be focused
+    //   
+    //   setIsFocused(smoothedFocused);
       
       // Debug focus state changes
-      if (lastFocusState !== smoothedFocused) {
-        console.log('📊 FOCUS STATE CHANGE:', { 
-          lastFocusState, 
-          smoothedFocused, 
-          sessionPaused: sessionPausedRef.current,
-          isHoldingPauseGesture 
-        });
-      }
+      // if (lastFocusState !== smoothedFocused) {
+      //   console.log('📊 FOCUS STATE CHANGE:', { 
+      //     lastFocusState, 
+      //     smoothedFocused, 
+      //     sessionPaused: sessionPausedRef.current,
+      //     isHoldingPauseGesture 
+      //   });
+      // }
       
         // Count distraction every time you look away, but only once every 5 seconds (and only if session is active)
-        if (lastFocusState && !smoothedFocused && sessionActiveRef.current && !sessionPausedRef.current && !isHoldingPauseGesture) {
-          const currentTime = Date.now();
-          const timeSinceLastDistraction = currentTime - lastDistractionTime.current;
-          
-          // Only count if it's been at least 5 seconds since the last distraction
-          if (timeSinceLastDistraction >= 5000) {
-            console.log('📊 LOOKED AWAY - Counting distraction! (5s cooldown passed)');
-            setDistractionCount(prev => {
-              const newCount = prev + 1;
-              console.log('📊 Distraction count updated:', prev, '→', newCount);
-              return newCount;
-            });
-            lastDistractionTime.current = currentTime;
-          } else {
-            console.log('📊 LOOKED AWAY - Not counting (cooldown active,', Math.round((5000 - timeSinceLastDistraction)/1000), 's remaining)');
-          }
-          
-          setShowDistractionWarning(true);
-          // Hide warning after 2 seconds
-          setTimeout(() => setShowDistractionWarning(false), 2000);
-        }
-      setLastFocusState(smoothedFocused);
+        // if (lastFocusState && !smoothedFocused && sessionActiveRef.current && !sessionPausedRef.current && !isHoldingPauseGesture) {
+        //   const currentTime = Date.now();
+        //   const timeSinceLastDistraction = currentTime - lastDistractionTime.current;
+        //   
+        //   // Only count if it's been at least 5 seconds since the last distraction
+        //   if (timeSinceLastDistraction >= 5000) {
+        //     console.log('📊 LOOKED AWAY - Counting distraction! (5s cooldown passed)');
+        //     setDistractionCount(prev => {
+        //       const newCount = prev + 1;
+        //       console.log('📊 Distraction count updated:', prev, '→', newCount);
+        //       return newCount;
+        //     });
+        //     lastDistractionTime.current = currentTime;
+        //   } else {
+        //     console.log('📊 LOOKED AWAY - Not counting (cooldown active,', Math.round((5000 - timeSinceLastDistraction)/1000), 's remaining)');
+        //   }
+        //   
+        //   setShowDistractionWarning(true);
+        //   // Hide warning after 2 seconds
+        //   setTimeout(() => setShowDistractionWarning(false), 2000);
+        // }
+      // setLastFocusState(smoothedFocused);
       
-      return newBuffer;
-    });
+      // return newBuffer;
+    // });
     
     // Use smoothed score for display
     setFocusScore(focus.smoothedScore);
     
     drawCanvas(results.image, landmarks, null);
-  }, [lastFocusState, cameraPaused, smoothedFocusScore]);
+  }, [cameraPaused, smoothedFocusScore]);
 
   // Hand detection results handler
   const onHandResults = useCallback((results: any) => {
@@ -601,7 +601,7 @@ const FocusZone: React.FC = memo(() => {
     setDistractionCount(0);
     setIsHoldingPauseGesture(false);
     const endTime = Date.now();
-    setSessionEndTime(endTime);
+    // setSessionEndTime(endTime);
     sessionEndTimeRef.current = endTime;
     console.log('⏰ SESSION END TIME SET:', endTime);
     
@@ -695,19 +695,19 @@ const FocusZone: React.FC = memo(() => {
     // Get key landmark points
     const thumb_tip = landmarks[4];
     const thumb_ip = landmarks[3];
-    const thumb_mcp = landmarks[2];
+    // const thumb_mcp = landmarks[2];
     const index_tip = landmarks[8];
     const index_pip = landmarks[6];
-    const index_mcp = landmarks[5];
+    // const index_mcp = landmarks[5];
     const middle_tip = landmarks[12];
     const middle_pip = landmarks[10];
-    const middle_mcp = landmarks[9];
+    // const middle_mcp = landmarks[9];
     const ring_tip = landmarks[16];
     const ring_pip = landmarks[14];
-    const ring_mcp = landmarks[13];
+    // const ring_mcp = landmarks[13];
     const pinky_tip = landmarks[20];
     const pinky_pip = landmarks[18];
-    const pinky_mcp = landmarks[17];
+    // const pinky_mcp = landmarks[17];
     const wrist = landmarks[0];
     
     // Calculate finger states (extended or not)
@@ -718,10 +718,10 @@ const FocusZone: React.FC = memo(() => {
     const pinkyUp = pinky_tip.y < pinky_pip.y;
     
     // Calculate distances for more accurate detection
-    const thumbIndexDistance = Math.abs(thumb_tip.x - index_tip.x);
+    // const thumbIndexDistance = Math.abs(thumb_tip.x - index_tip.x);
     const indexMiddleDistance = Math.abs(index_tip.x - middle_tip.x);
     const middleRingDistance = Math.abs(middle_tip.x - ring_tip.x);
-    const ringPinkyDistance = Math.abs(ring_tip.x - pinky_tip.x);
+    // const ringPinkyDistance = Math.abs(ring_tip.x - pinky_tip.x);
     
     // FIST: All fingers down, thumb can be up or down
     const fistFingers = [indexUp, middleUp, ringUp, pinkyUp].filter(Boolean).length;
@@ -1424,7 +1424,7 @@ const FocusZone: React.FC = memo(() => {
             
             {/* Distraction Warning */}
             <AnimatePresence>
-              {showDistractionWarning && (
+              {false && (
                 <motion.div
                   initial={{ opacity: 0, y: -10 }}
                   animate={{ opacity: 1, y: 0 }}

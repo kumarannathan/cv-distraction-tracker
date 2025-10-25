@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Eye, 
-  Clock, 
   Activity, 
   Coffee, 
   Move, 
@@ -10,10 +9,8 @@ import {
   CheckCircle,
   Settings,
   Bell,
-  BellOff,
   Timer,
-  Heart,
-  Brain
+  Heart
 } from 'lucide-react';
 
 interface BreakReminder {
@@ -151,7 +148,7 @@ const BreakReminders: React.FC<BreakRemindersProps> = memo(({
 
     const checkReminders = () => {
       const now = Date.now();
-      const sessionDuration = (now - sessionStartTime) / 1000 / 60; // in minutes
+      // const sessionDuration = (now - sessionStartTime) / 1000 / 60; // in minutes
 
       reminders.forEach(reminder => {
         if (!reminder.isEnabled) return;
@@ -309,11 +306,11 @@ const BreakReminders: React.FC<BreakRemindersProps> = memo(({
             <div className="flex items-center justify-between">
               <div>
                 <h4 className="font-semibold text-blue-900">Next Reminder:</h4>
-                <p className="text-blue-700">{nextReminder.reminder.name}</p>
+                <p className="text-blue-700">{(nextReminder as any)?.reminder?.name || 'No reminder'}</p>
               </div>
               <div className="text-right">
                 <div className="text-2xl font-bold text-blue-900">
-                  {Math.round(nextReminder.timeUntil)}m
+                  {Math.round((nextReminder as any)?.timeUntil || 0)}m
                 </div>
                 <div className="text-sm text-blue-600">Time Until</div>
               </div>

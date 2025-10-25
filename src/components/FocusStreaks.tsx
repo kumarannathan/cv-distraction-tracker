@@ -51,7 +51,7 @@ const FocusStreaks: React.FC<{
     }
   ]);
 
-  const [streakStats, setStreakStats] = useState<StreakStats>({
+  const [streakStats] = useState<StreakStats>({
     currentStreak: 7,
     longestStreak: 15,
     totalDays: 23,
@@ -60,7 +60,7 @@ const FocusStreaks: React.FC<{
     weeklyProgress: 420
   });
 
-  const [focusHistory, setFocusHistory] = useState<FocusStreak[]>([
+  const [focusHistory] = useState<FocusStreak[]>([
     { date: '2024-01-20', totalMinutes: 135, sessions: 4, averageScore: 87, completed: true },
     { date: '2024-01-19', totalMinutes: 98, sessions: 3, averageScore: 82, completed: true },
     { date: '2024-01-18', totalMinutes: 156, sessions: 5, averageScore: 91, completed: true },

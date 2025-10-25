@@ -50,7 +50,7 @@ const PomodoroTimer: React.FC<{
 
   // Timer effect
   useEffect(() => {
-    let interval: NodeJS.Timeout | null = null;
+    let interval: number | null = null;
 
     if (state.isActive && !state.isPaused) {
       interval = setInterval(() => {

@@ -1,18 +1,10 @@
-import React, { useState, useEffect, useCallback, memo } from 'react';
+import React, { useState, useCallback, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Brain, 
   Lightbulb, 
   BookOpen, 
   Zap, 
-  Settings, 
-  Play, 
-  Pause, 
-  Square,
-  Clock,
-  Target,
-  Shield,
-  Coffee,
   Moon,
   Sun,
   Activity
@@ -175,8 +167,8 @@ const FocusModes: React.FC<FocusModesProps> = memo(({
     }
   ]);
 
-  const [showSettings, setShowSettings] = useState(false);
-  const [editingMode, setEditingMode] = useState<FocusMode | null>(null);
+  // const [showSettings, setShowSettings] = useState(false);
+  // const [editingMode, setEditingMode] = useState<FocusMode | null>(null);
   const [showCreateMode, setShowCreateMode] = useState(false);
   const [newMode, setNewMode] = useState<Partial<FocusMode>>({
     name: '',

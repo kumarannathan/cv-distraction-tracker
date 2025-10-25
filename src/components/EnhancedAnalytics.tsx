@@ -9,10 +9,9 @@ import {
   PieChart, 
   Activity,
   Eye,
-  Brain,
   Zap
 } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart as RechartsPieChart, Cell } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart as RechartsPieChart, Pie, Cell } from 'recharts';
 
 interface SessionData {
   id: string;
@@ -54,7 +53,7 @@ const EnhancedAnalytics: React.FC<{
   sessionHistory: any[];
   isOpen: boolean;
   onClose: () => void;
-}> = memo(({ sessionHistory, isOpen, onClose }) => {
+}> = memo(({ isOpen, onClose }) => {
   const [selectedPeriod, setSelectedPeriod] = useState<'week' | 'month' | 'quarter' | 'year'>('month');
   const [selectedView, setSelectedView] = useState<'overview' | 'trends' | 'patterns' | 'calendar'>('overview');
   const [analyticsData, setAnalyticsData] = useState<AnalyticsData | null>(null);
@@ -354,7 +353,7 @@ const EnhancedAnalytics: React.FC<{
                         cy="50%"
                         outerRadius={100}
                         dataKey="value"
-                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                        label={({ name, percent }: any) => `${name} ${(percent * 100).toFixed(0)}%`}
                       >
                         {focusPatternData.map((entry, index) => (
                           <Cell key={`cell-${index}`} fill={entry.color} />
@@ -376,7 +375,7 @@ const EnhancedAnalytics: React.FC<{
                         cy="50%"
                         outerRadius={100}
                         dataKey="value"
-                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                        label={({ name, percent }: any) => `${name} ${(percent * 100).toFixed(0)}%`}
                       >
                         {distractionData.map((entry, index) => (
                           <Cell key={`cell-${index}`} fill={entry.color} />

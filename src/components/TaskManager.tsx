@@ -10,9 +10,7 @@ import {
   Edit3, 
   Trash2, 
   Folder,
-  Target,
-  TrendingUp,
-  Calendar
+  Target
 } from 'lucide-react';
 
 interface Task {
@@ -48,7 +46,7 @@ interface TaskManagerProps {
 
 const TaskManager: React.FC<TaskManagerProps> = memo(({ 
   onTaskStart, 
-  onTaskEnd, 
+  // onTaskEnd, 
   currentTaskId, 
   isSessionActive 
 }) => {
@@ -124,7 +122,7 @@ const TaskManager: React.FC<TaskManagerProps> = memo(({
 
   const [showAddTask, setShowAddTask] = useState(false);
   const [showAddProject, setShowAddProject] = useState(false);
-  const [editingTask, setEditingTask] = useState<Task | null>(null);
+  // const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [selectedProject, setSelectedProject] = useState<string>('all');
   const [newTask, setNewTask] = useState<Partial<Task>>({
     name: '',
@@ -226,9 +224,9 @@ const TaskManager: React.FC<TaskManagerProps> = memo(({
     onTaskStart(task);
   }, [onTaskStart]);
 
-  const endTask = useCallback((task: Task) => {
-    onTaskEnd(task, task.actualTime);
-  }, [onTaskEnd]);
+  // const endTask = useCallback((task: Task) => {
+    // onTaskEnd(task, task.actualTime);
+  // }, [onTaskEnd]);
 
   const toggleTaskCompletion = useCallback((taskId: string) => {
     setTasks(prev => prev.map(task => 
@@ -465,7 +463,7 @@ const TaskManager: React.FC<TaskManagerProps> = memo(({
                   </button>
                   
                   <button
-                    onClick={() => setEditingTask(task)}
+                    onClick={() => {/* setEditingTask(task) */}}
                     className="p-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-colors"
                   >
                     <Edit3 className="w-4 h-4" />

@@ -13,7 +13,6 @@ import {
   Flame,
   Heart,
   Star,
-  Plus,
   Trash2,
   Save,
   RotateCcw
